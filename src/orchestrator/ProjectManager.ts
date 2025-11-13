@@ -2,30 +2,28 @@ import { ProjectRepo } from '../storage/ProjectRepo';
 import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
 import { ProjectConfig, ProjectStateObject, Phase } from './types';
-import { PlannerLLM } from '../llm/PlannerLLM';
+import { PlannerModelPool } from '../llm/PlannerModelPool';
 
 /**
  * Manages project lifecycle and state
- * Phase 2: Added planner integration
+ * Phase 2: Uses PlannerModelPool for planner operations
  */
 export class ProjectManager {
   private projectRepo: ProjectRepo;
   private psoRepo: PsoRepo;
   private logRepo: LogRepo;
-  private planner: PlannerLLM | null = null;
+  private plannerPool: PlannerModelPool;
 
-  constructor(projectRepo: ProjectRepo, psoRepo: PsoRepo, logRepo: LogRepo, planner?: PlannerLLM) {
+  constructor(
+    projectRepo: ProjectRepo,
+    psoRepo: PsoRepo,
+    logRepo: LogRepo,
+    plannerPool: PlannerModelPool
+  ) {
     this.projectRepo = projectRepo;
     this.psoRepo = psoRepo;
     this.logRepo = logRepo;
-    this.planner = planner || null;
-  }
-
-  /**
-   * Set the planner instance
-   */
-  setPlanner(planner: PlannerLLM): void {
-    this.planner = planner;
+    this.plannerPool = plannerPool;
   }
 
   /**
@@ -138,13 +136,9 @@ export class ProjectManager {
 
   /**
    * Initialize project plan using the planner
-   * Phase 2: Generate initial phases and save to PSO
+   * Phase 2: Generate initial phases and save to PSO (renamed from initializePlan)
    */
-  async initializePlan(projectId: string): Promise<ProjectStateObject> {
-    if (!this.planner) {
-      throw new Error('Planner not configured. Call setPlanner() first.');
-    }
-
+  async initPlan(projectId: string): Promise<ProjectStateObject> {
     console.log('🤖 Initializing project plan with AI planner...');
 
     const config = await this.loadProjectConfig(projectId);
@@ -165,8 +159,11 @@ export class ProjectManager {
     );
 
     try {
+      // Get active planner from pool
+      const planner = this.plannerPool.getActivePlanner();
+
       // Call planner to generate phases
-      const planResult = await this.planner.planProject(config);
+      const planResult = await planner.planProject(config);
 
       console.log(`✅ Generated ${planResult.phases.length} phases`);
 
@@ -182,6 +179,7 @@ export class ProjectManager {
       pso.phases = phases;
       pso.currentPhase = null; // Will be set when starting first phase
       pso.summary = `Project planned with ${phases.length} phases`;
+      pso.lastUpdated = new Date().toISOString();
 
       await this.savePSO(pso);
 
@@ -226,10 +224,6 @@ export class ProjectManager {
    * Phase 2: Ask planner for detailed instruction for current phase
    */
   async getNextPhaseInstruction(projectId: string): Promise<string> {
-    if (!this.planner) {
-      throw new Error('Planner not configured. Call setPlanner() first.');
-    }
-
     const pso = await this.loadOrInitPSO(projectId);
 
     if (pso.phases.length === 0) {
@@ -269,8 +263,11 @@ export class ProjectManager {
       currentPhase.status = 'running';
       await this.savePSO(pso);
 
+      // Get active planner from pool
+      const planner = this.plannerPool.getActivePlanner();
+
       // Get instruction from planner
-      const result = await this.planner.planNextPhase(pso);
+      const result = await planner.planNextPhase(pso);
 
       console.log('\n📝 Phase Instruction:\n');
       console.log(result.instruction);

@@ -5,6 +5,7 @@ import { ProjectRepo } from '../storage/ProjectRepo';
 import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
 import { OpenAIPlanner } from '../llm/OpenAIPlanner';
+import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -120,9 +121,6 @@ async function main(): Promise<void> {
     const psoRepo = new PsoRepo();
     const logRepo = new LogRepo();
 
-    // Create project manager (without planner for now)
-    const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo);
-
     console.log(`📁 Project ID: ${args.projectId}`);
     console.log('');
 
@@ -165,17 +163,19 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Initialize planner
+      // Initialize planner and pool
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
         config.openaiPlannerModel,
         config.openaiBaseUrl
       );
+      const pool = new PlannerModelPool(planner);
 
-      projectManager.setPlanner(planner);
+      // Create project manager with pool
+      const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
 
       // Initialize plan
-      await projectManager.initializePlan(args.projectId);
+      await projectManager.initPlan(args.projectId);
 
       console.log('✅ Plan initialization complete!');
       console.log('');
@@ -192,14 +192,16 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Initialize planner
+      // Initialize planner and pool
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
         config.openaiPlannerModel,
         config.openaiBaseUrl
       );
+      const pool = new PlannerModelPool(planner);
 
-      projectManager.setPlanner(planner);
+      // Create project manager with pool
+      const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
 
       // Get next phase instruction
       const instruction = await projectManager.getNextPhaseInstruction(args.projectId);
@@ -212,7 +214,12 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Default behavior (Phase 1)
+    // Default behavior (Phase 1) - Create manager without planner
+    // Use a stub pool to satisfy constructor requirements
+    const stubPlanner = new OpenAIPlanner('stub', 'gpt-4');
+    const stubPool = new PlannerModelPool(stubPlanner);
+    const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, stubPool);
+
     console.log('🚀 Starting Appula orchestration...');
     console.log('');
 
