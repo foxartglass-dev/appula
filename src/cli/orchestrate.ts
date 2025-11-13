@@ -4,14 +4,25 @@ import { ProjectManager } from '../orchestrator/ProjectManager';
 import { ProjectRepo } from '../storage/ProjectRepo';
 import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
-import { config } from '../config/env';
+import { OpenAIPlanner } from '../llm/OpenAIPlanner';
+import { config, validateConfig } from '../config/env';
 
 /**
  * Parse command line arguments
  */
-function parseArgs(): { projectId?: string; help?: boolean } {
+function parseArgs(): {
+  projectId?: string;
+  help?: boolean;
+  initPlan?: boolean;
+  nextPhase?: boolean;
+} {
   const args = process.argv.slice(2);
-  const result: { projectId?: string; help?: boolean } = {};
+  const result: {
+    projectId?: string;
+    help?: boolean;
+    initPlan?: boolean;
+    nextPhase?: boolean;
+  } = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -21,6 +32,10 @@ function parseArgs(): { projectId?: string; help?: boolean } {
     } else if (arg === '--project' || arg === '-p') {
       result.projectId = args[i + 1];
       i++; // Skip next arg
+    } else if (arg === '--init-plan') {
+      result.initPlan = true;
+    } else if (arg === '--next-phase') {
+      result.nextPhase = true;
     }
   }
 
@@ -37,25 +52,41 @@ function showHelp(): void {
 ╚═══════════════════════════════════════════╝
 
 Usage:
-  npm run orchestrate -- --project <projectId>
+  npm run orchestrate -- --project <projectId> [options]
 
 Options:
-  --project, -p <id>    Project ID to orchestrate
+  --project, -p <id>    Project ID to orchestrate (required)
+  --init-plan           Initialize project plan with AI planner
+  --next-phase          Get next phase instruction from planner
   --help, -h            Show this help message
 
 Examples:
-  npm run orchestrate -- --project demo
-  npm run orchestrate -- -p my-project
+  # Initialize a project plan
+  npm run orchestrate -- --project demo --init-plan
 
-Phase 1 Status:
-  This is a skeleton implementation. No actual AI calls
-  are made yet. The CLI will load the project config and
-  PSO, then exit gracefully.
+  # Get next phase instruction
+  npm run orchestrate -- --project demo --next-phase
+
+  # Basic project start (Phase 1 behavior)
+  npm run orchestrate -- --project demo
+
+Phase 2 Features:
+  --init-plan: Uses OpenAI GPT to analyze your project and
+               break it down into logical development phases.
+
+  --next-phase: Gets detailed instruction for the next phase
+                from the AI planner (coder execution still stubbed).
 
 Configuration:
   Projects dir: ${config.projectsDir}
   State dir:    ${config.stateDir}
   Logs dir:     ${config.logsDir}
+  OpenAI Model: ${config.openaiPlannerModel}
+
+Environment Variables:
+  OPENAI_API_KEY         - Required for planner operations
+  OPENAI_BASE_URL        - Optional custom OpenAI endpoint
+  OPENAI_PLANNER_MODEL   - Model to use (default: gpt-4)
   `);
 }
 
@@ -76,8 +107,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const phaseVersion = args.initPlan || args.nextPhase ? 'Phase 2' : 'Phase 1';
+
   console.log('╔═══════════════════════════════════════════╗');
-  console.log('║        Appula Orchestrator (Phase 1)      ║');
+  console.log(`║        Appula Orchestrator (${phaseVersion})      ║`);
   console.log('╚═══════════════════════════════════════════╝');
   console.log('');
 
@@ -87,7 +120,7 @@ async function main(): Promise<void> {
     const psoRepo = new PsoRepo();
     const logRepo = new LogRepo();
 
-    // Create project manager
+    // Create project manager (without planner for now)
     const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo);
 
     console.log(`📁 Project ID: ${args.projectId}`);
@@ -103,23 +136,83 @@ async function main(): Promise<void> {
       console.log(`  projects/${args.projectId}.json`);
       console.log('');
       console.log('Example project configuration:');
-      console.log(JSON.stringify({
-        id: args.projectId,
-        name: 'My Project',
-        repoPath: '/path/to/repo',
-        description: 'Project description',
-        status: 'idle',
-        plannerModel: 'gpt-4',
-        coderMode: 'claude-code-cli',
-        ragEnabled: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            id: args.projectId,
+            name: 'My Project',
+            repoPath: '/path/to/repo',
+            description: 'Project description',
+            status: 'idle',
+            plannerModel: 'gpt-4',
+            coderMode: 'claude-code-cli',
+            ragEnabled: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        )
+      );
       console.log('');
       process.exit(1);
     }
 
-    // Start project orchestration
+    // Handle init-plan
+    if (args.initPlan) {
+      console.log('🎯 Mode: Initialize Project Plan\n');
+
+      // Validate OpenAI config
+      validateConfig(true);
+
+      // Initialize planner
+      const planner = new OpenAIPlanner(
+        config.openaiApiKey,
+        config.openaiPlannerModel,
+        config.openaiBaseUrl
+      );
+
+      projectManager.setPlanner(planner);
+
+      // Initialize plan
+      await projectManager.initializePlan(args.projectId);
+
+      console.log('✅ Plan initialization complete!');
+      console.log('');
+      console.log('Next steps:');
+      console.log(`  npm run orchestrate -- --project ${args.projectId} --next-phase`);
+      console.log('');
+      return;
+    }
+
+    // Handle next-phase
+    if (args.nextPhase) {
+      console.log('🎯 Mode: Get Next Phase Instruction\n');
+
+      // Validate OpenAI config
+      validateConfig(true);
+
+      // Initialize planner
+      const planner = new OpenAIPlanner(
+        config.openaiApiKey,
+        config.openaiPlannerModel,
+        config.openaiBaseUrl
+      );
+
+      projectManager.setPlanner(planner);
+
+      // Get next phase instruction
+      const instruction = await projectManager.getNextPhaseInstruction(args.projectId);
+
+      console.log('✅ Instruction generated!');
+      console.log('');
+      console.log('Note: This instruction would be passed to Claude Code CLI');
+      console.log('in a future phase. For now, it\'s just displayed above.');
+      console.log('');
+      return;
+    }
+
+    // Default behavior (Phase 1)
     console.log('🚀 Starting Appula orchestration...');
     console.log('');
 
@@ -128,17 +221,10 @@ async function main(): Promise<void> {
     console.log('');
     console.log('✅ Phase 1 skeleton execution complete!');
     console.log('');
-    console.log('Note: This is a Phase 1 stub implementation.');
-    console.log('No actual AI calls or orchestration logic executed yet.');
+    console.log('Available Phase 2 commands:');
+    console.log(`  npm run orchestrate -- --project ${args.projectId} --init-plan`);
+    console.log(`  npm run orchestrate -- --project ${args.projectId} --next-phase`);
     console.log('');
-    console.log('Next phases will implement:');
-    console.log('  - OpenAI planner integration');
-    console.log('  - Claude Code CLI executor');
-    console.log('  - Orchestration loop');
-    console.log('  - RAG (Gemini File Search)');
-    console.log('  - UI testing (Skyvern)');
-    console.log('');
-
   } catch (error) {
     console.error('');
     console.error('❌ Error:', (error as Error).message);

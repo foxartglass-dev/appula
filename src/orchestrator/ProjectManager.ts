@@ -1,20 +1,31 @@
 import { ProjectRepo } from '../storage/ProjectRepo';
 import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
-import { ProjectConfig, ProjectStateObject } from './types';
+import { ProjectConfig, ProjectStateObject, Phase } from './types';
+import { PlannerLLM } from '../llm/PlannerLLM';
 
 /**
  * Manages project lifecycle and state
+ * Phase 2: Added planner integration
  */
 export class ProjectManager {
   private projectRepo: ProjectRepo;
   private psoRepo: PsoRepo;
   private logRepo: LogRepo;
+  private planner: PlannerLLM | null = null;
 
-  constructor(projectRepo: ProjectRepo, psoRepo: PsoRepo, logRepo: LogRepo) {
+  constructor(projectRepo: ProjectRepo, psoRepo: PsoRepo, logRepo: LogRepo, planner?: PlannerLLM) {
     this.projectRepo = projectRepo;
     this.psoRepo = psoRepo;
     this.logRepo = logRepo;
+    this.planner = planner || null;
+  }
+
+  /**
+   * Set the planner instance
+   */
+  setPlanner(planner: PlannerLLM): void {
+    this.planner = planner;
   }
 
   /**
@@ -123,5 +134,172 @@ export class ProjectManager {
    */
   async savePSO(pso: ProjectStateObject): Promise<void> {
     await this.psoRepo.save(pso);
+  }
+
+  /**
+   * Initialize project plan using the planner
+   * Phase 2: Generate initial phases and save to PSO
+   */
+  async initializePlan(projectId: string): Promise<ProjectStateObject> {
+    if (!this.planner) {
+      throw new Error('Planner not configured. Call setPlanner() first.');
+    }
+
+    console.log('🤖 Initializing project plan with AI planner...');
+
+    const config = await this.loadProjectConfig(projectId);
+    const pso = await this.loadOrInitPSO(projectId);
+
+    // Check if already has phases
+    if (pso.phases.length > 0) {
+      console.log('⚠️  Project already has phases. Skipping plan initialization.');
+      return pso;
+    }
+
+    await this.logRepo.append(
+      this.logRepo.createLogEntry(
+        projectId,
+        'info',
+        'Starting plan initialization with AI planner'
+      )
+    );
+
+    try {
+      // Call planner to generate phases
+      const planResult = await this.planner.planProject(config);
+
+      console.log(`✅ Generated ${planResult.phases.length} phases`);
+
+      // Convert to Phase objects with status
+      const phases: Phase[] = planResult.phases.map(p => ({
+        number: p.number,
+        name: p.name,
+        description: p.description,
+        status: 'pending' as const,
+      }));
+
+      // Update PSO with phases
+      pso.phases = phases;
+      pso.currentPhase = null; // Will be set when starting first phase
+      pso.summary = `Project planned with ${phases.length} phases`;
+
+      await this.savePSO(pso);
+
+      await this.logRepo.append(
+        this.logRepo.createLogEntry(
+          projectId,
+          'info',
+          `Plan initialized successfully with ${phases.length} phases`,
+          { phaseCount: phases.length }
+        )
+      );
+
+      // Display phases
+      console.log('\n📋 Project Phases:');
+      phases.forEach(phase => {
+        console.log(`  ${phase.number}. ${phase.name}`);
+        if (phase.description) {
+          console.log(`     ${phase.description}`);
+        }
+      });
+      console.log('');
+
+      return pso;
+    } catch (error) {
+      const errorMsg = `Failed to initialize plan: ${(error as Error).message}`;
+      console.error('❌', errorMsg);
+
+      await this.logRepo.append(
+        this.logRepo.createLogEntry(
+          projectId,
+          'error',
+          errorMsg
+        )
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Get next phase instruction from planner
+   * Phase 2: Ask planner for detailed instruction for current phase
+   */
+  async getNextPhaseInstruction(projectId: string): Promise<string> {
+    if (!this.planner) {
+      throw new Error('Planner not configured. Call setPlanner() first.');
+    }
+
+    const pso = await this.loadOrInitPSO(projectId);
+
+    if (pso.phases.length === 0) {
+      throw new Error('No phases defined. Run --init-plan first.');
+    }
+
+    // Determine next phase
+    let nextPhaseNumber: number;
+
+    if (pso.currentPhase === null) {
+      // No phase started yet, start with phase 1
+      nextPhaseNumber = 1;
+      pso.currentPhase = 1;
+    } else {
+      nextPhaseNumber = pso.currentPhase;
+    }
+
+    const currentPhase = pso.phases.find(p => p.number === nextPhaseNumber);
+
+    if (!currentPhase) {
+      throw new Error(`Phase ${nextPhaseNumber} not found`);
+    }
+
+    console.log(`\n🤖 Getting instruction for Phase ${currentPhase.number}: ${currentPhase.name}`);
+
+    await this.logRepo.append(
+      this.logRepo.createLogEntry(
+        projectId,
+        'info',
+        `Requesting instruction for phase ${nextPhaseNumber}`,
+        { phase: nextPhaseNumber }
+      )
+    );
+
+    try {
+      // Mark phase as running
+      currentPhase.status = 'running';
+      await this.savePSO(pso);
+
+      // Get instruction from planner
+      const result = await this.planner.planNextPhase(pso);
+
+      console.log('\n📝 Phase Instruction:\n');
+      console.log(result.instruction);
+      console.log('');
+
+      await this.logRepo.append(
+        this.logRepo.createLogEntry(
+          projectId,
+          'info',
+          'Instruction received from planner',
+          { phase: nextPhaseNumber, instructionLength: result.instruction.length }
+        )
+      );
+
+      return result.instruction;
+    } catch (error) {
+      const errorMsg = `Failed to get phase instruction: ${(error as Error).message}`;
+      console.error('❌', errorMsg);
+
+      await this.logRepo.append(
+        this.logRepo.createLogEntry(
+          projectId,
+          'error',
+          errorMsg,
+          { phase: nextPhaseNumber }
+        )
+      );
+
+      throw error;
+    }
   }
 }

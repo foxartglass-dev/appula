@@ -9,14 +9,21 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Phase 1: Project Skeleton
+## Current Status: Phase 2
 
-This phase establishes the TypeScript foundation with:
+### Phase 1: Project Skeleton ✅
 - Clean folder structure
 - Strict TypeScript configuration
 - Core interfaces and types
 - Minimal Express HTTP server
-- Stub implementations (no actual AI calls)
+- Stub implementations
+
+### Phase 2: OpenAI Planner Integration ✅
+- Real OpenAI GPT integration for project planning
+- Automatic phase breakdown for projects
+- Next-phase instruction generation
+- Planner health monitoring & failover support
+- CLI commands: `--init-plan` and `--next-phase`
 
 ## Project Structure
 
@@ -46,6 +53,21 @@ appula-core/
 npm install
 ```
 
+### Configure Environment
+
+Copy `.env.example` to `.env` and add your API keys:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and add your OpenAI API key:
+
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_PLANNER_MODEL=gpt-4  # or gpt-4-turbo, gpt-3.5-turbo
+```
+
 ### Run Development Server
 
 ```bash
@@ -56,7 +78,16 @@ Server runs on `http://localhost:4001`
 
 ### Run Orchestrator CLI
 
+**Phase 2 Commands:**
+
 ```bash
+# Initialize project plan with AI
+npm run orchestrate -- --project demo --init-plan
+
+# Get next phase instruction
+npm run orchestrate -- --project demo --next-phase
+
+# Basic project start (Phase 1 mode)
 npm run orchestrate -- --project demo
 ```
 
@@ -79,21 +110,28 @@ npm run typecheck
 npm run build
 ```
 
-## Phase 1 Status
+## Implementation Status
 
-✅ Project structure created
-✅ TypeScript configuration
-✅ Core types and interfaces defined
-✅ Stub implementations (no actual AI calls)
-✅ Express server with basic endpoints
-✅ CLI entrypoint
+### ✅ Phase 1: Project Skeleton
+- Project structure created
+- TypeScript configuration
+- Core types and interfaces defined
+- Stub implementations
+- Express server with basic endpoints
+- CLI entrypoint
 
-## Next Phases
+### ✅ Phase 2: OpenAI Planner
+- OpenAI GPT integration
+- Project phase planning
+- Next-phase instruction generation
+- Planner model pool with failover
+- Enhanced CLI with `--init-plan` and `--next-phase`
 
-- **Phase 2**: Implement OpenAI planner integration
-- **Phase 3**: Add Claude Code CLI executor
-- **Phase 4**: Implement orchestration loop
-- **Phase 5**: Add RAG (Gemini File Search)
+### Next Phases
+
+- **Phase 3**: Add Claude Code CLI executor (coder integration)
+- **Phase 4**: Implement orchestration loop (planner → coder → assess)
+- **Phase 5**: Add RAG (Gemini File Search for long-term memory)
 - **Phase 6**: Integrate Skyvern for UI testing
 
 ## License
