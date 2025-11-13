@@ -3,6 +3,8 @@ import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
 import { ProjectConfig, ProjectStateObject, Phase } from './types';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
+import { PhaseRunner } from './PhaseRunner';
+import { CoderExecutor } from '../llm/CoderExecutor';
 
 /**
  * Manages project lifecycle and state
@@ -220,79 +222,56 @@ export class ProjectManager {
   }
 
   /**
-   * Get next phase instruction from planner
-   * Phase 2: Ask planner for detailed instruction for current phase
+   * Get next phase instruction from planner and optionally execute
+   * Phase 3: Uses PhaseRunner with optional coder
    */
-  async getNextPhaseInstruction(projectId: string): Promise<string> {
+  async getNextPhaseInstruction(
+    projectId: string,
+    coder: CoderExecutor | null = null
+  ): Promise<string> {
+    const config = await this.loadProjectConfig(projectId);
     const pso = await this.loadOrInitPSO(projectId);
 
     if (pso.phases.length === 0) {
       throw new Error('No phases defined. Run --init-plan first.');
     }
 
-    // Determine next phase
-    let nextPhaseNumber: number;
-
-    if (pso.currentPhase === null) {
-      // No phase started yet, start with phase 1
-      nextPhaseNumber = 1;
-      pso.currentPhase = 1;
-    } else {
-      nextPhaseNumber = pso.currentPhase;
-    }
-
-    const currentPhase = pso.phases.find(p => p.number === nextPhaseNumber);
-
-    if (!currentPhase) {
-      throw new Error(`Phase ${nextPhaseNumber} not found`);
-    }
-
-    console.log(`\n🤖 Getting instruction for Phase ${currentPhase.number}: ${currentPhase.name}`);
-
     await this.logRepo.append(
       this.logRepo.createLogEntry(
         projectId,
         'info',
-        `Requesting instruction for phase ${nextPhaseNumber}`,
-        { phase: nextPhaseNumber }
+        'Starting next phase execution'
       )
     );
 
     try {
-      // Mark phase as running
-      currentPhase.status = 'running';
-      await this.savePSO(pso);
+      // Create PhaseRunner with optional coder
+      const runner = new PhaseRunner(this.plannerPool, this.logRepo, coder);
 
-      // Get active planner from pool
-      const planner = this.plannerPool.getActivePlanner();
+      // Run next phase (will plan and optionally execute)
+      const updatedPso = await runner.runNextPhase(config, pso);
 
-      // Get instruction from planner
-      const result = await planner.planNextPhase(pso);
+      // Save updated PSO
+      await this.savePSO(updatedPso);
 
-      console.log('\n📝 Phase Instruction:\n');
-      console.log(result.instruction);
-      console.log('');
-
-      await this.logRepo.append(
-        this.logRepo.createLogEntry(
-          projectId,
-          'info',
-          'Instruction received from planner',
-          { phase: nextPhaseNumber, instructionLength: result.instruction.length }
-        )
+      // Find the phase that was just run to return its instruction
+      const currentPhase = updatedPso.phases.find(
+        p => p.number === updatedPso.currentPhase
       );
 
-      return result.instruction;
+      // Return a summary (instruction would be logged by PhaseRunner)
+      return currentPhase
+        ? `Phase ${currentPhase.number}: ${currentPhase.name} - ${currentPhase.status}`
+        : 'Phase executed';
     } catch (error) {
-      const errorMsg = `Failed to get phase instruction: ${(error as Error).message}`;
+      const errorMsg = `Failed to execute phase: ${(error as Error).message}`;
       console.error('❌', errorMsg);
 
       await this.logRepo.append(
         this.logRepo.createLogEntry(
           projectId,
           'error',
-          errorMsg,
-          { phase: nextPhaseNumber }
+          errorMsg
         )
       );
 

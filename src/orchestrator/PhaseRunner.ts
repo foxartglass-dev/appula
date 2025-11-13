@@ -1,23 +1,30 @@
 import { ProjectConfig, ProjectStateObject } from './types';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { LogRepo } from '../storage/LogRepo';
+import { CoderExecutor } from '../llm/CoderExecutor';
 
 /**
  * Runs individual project phases
- * Phase 2: Integrated with planner (coder still stubbed)
+ * Phase 3: Integrated with planner and optional coder executor
  */
 export class PhaseRunner {
   private plannerPool: PlannerModelPool;
   private logRepo: LogRepo;
+  private coder: CoderExecutor | null;
 
-  constructor(plannerPool: PlannerModelPool, logRepo: LogRepo) {
+  constructor(
+    plannerPool: PlannerModelPool,
+    logRepo: LogRepo,
+    coder: CoderExecutor | null = null
+  ) {
     this.plannerPool = plannerPool;
     this.logRepo = logRepo;
+    this.coder = coder;
   }
 
   /**
    * Run the next phase of a project
-   * Phase 2: Gets instruction from planner, logs it (coder still stubbed)
+   * Phase 3: Gets instruction from planner, optionally executes with coder
    */
   async runNextPhase(
     project: ProjectConfig,
@@ -78,21 +85,86 @@ export class PhaseRunner {
         )
       );
 
-      // Phase 2: We don't call the coder yet
-      // Just log that we would pass this to Claude Code CLI in Phase 3
-      console.log('💡 Phase 2: Coder execution is stubbed.');
-      console.log('   In Phase 3, this instruction will be passed to Claude Code CLI.\n');
+      // Phase 3: Conditionally execute with coder if provided
+      if (this.coder) {
+        console.log('💡 Executing phase with CoderExecutor...\n');
 
-      await this.logRepo.append(
-        this.logRepo.createLogEntry(
-          project.id,
-          'info',
-          'Phase instruction ready for coder (coder execution stubbed in Phase 2)',
-          { phase: nextPhase.number }
-        )
-      );
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            project.id,
+            'info',
+            'Starting coder execution',
+            { phase: nextPhase.number }
+          )
+        );
 
-      // Return updated PSO (phase marked as running)
+        // Execute with coder
+        const executionResult = await this.coder.runPhase({
+          projectId: project.id,
+          projectRoot: project.repoPath,
+          phaseNumber: nextPhase.number,
+          phaseName: nextPhase.name,
+          instruction: result.instruction,
+        });
+
+        console.log(`\n📊 Execution Result: ${executionResult.status}`);
+        if (executionResult.exitCode !== undefined && executionResult.exitCode !== null) {
+          console.log(`   Exit Code: ${executionResult.exitCode}`);
+        }
+        console.log(`   Duration: ${new Date(executionResult.finishedAt).getTime() - new Date(executionResult.startedAt).getTime()}ms`);
+        console.log('');
+
+        // Log execution result
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            project.id,
+            executionResult.status === 'success' ? 'info' : 'error',
+            `Phase execution ${executionResult.status}`,
+            {
+              phase: nextPhase.number,
+              status: executionResult.status,
+              exitCode: executionResult.exitCode,
+              logs: executionResult.logs,
+              errorMessage: executionResult.errorMessage,
+            }
+          )
+        );
+
+        // Update phase based on execution result
+        if (executionResult.status === 'success') {
+          nextPhase.status = 'done';
+          nextPhase.result = {
+            status: 'success',
+            logs: executionResult.logs,
+            finishedAt: executionResult.finishedAt,
+          };
+          console.log('✅ Phase completed successfully!\n');
+        } else {
+          nextPhase.status = 'error';
+          nextPhase.result = {
+            status: 'error',
+            logs: executionResult.logs,
+            error: executionResult.errorMessage || `Execution ${executionResult.status}`,
+            finishedAt: executionResult.finishedAt,
+          };
+          console.log(`❌ Phase failed: ${executionResult.status}\n`);
+        }
+      } else {
+        // Plan-only mode (Phase 2 behavior)
+        console.log('💡 Plan-only mode: Coder not configured.');
+        console.log('   Instruction generated but not executed.\n');
+
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            project.id,
+            'info',
+            'Phase instruction ready (plan-only mode)',
+            { phase: nextPhase.number }
+          )
+        );
+      }
+
+      // Return updated PSO
       pso.lastUpdated = new Date().toISOString();
       return pso;
     } catch (error) {

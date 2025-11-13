@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 2
+## Current Status: Phase 3
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -24,6 +24,14 @@ AI orchestration system combining multiple AI agents for software development au
 - Next-phase instruction generation
 - Planner health monitoring & failover support
 - CLI commands: `--init-plan` and `--next-phase`
+
+### Phase 3: Claude Code CLI Executor ✅
+- Safe, config-driven Claude Code CLI integration
+- Generic command template with placeholders
+- Plan file generation (markdown format)
+- Structured result capture (stdout/stderr, exit codes, timestamps)
+- Graceful degradation to plan-only mode when CLI not configured
+- Automatic timeout handling and error categorization
 
 ## Project Structure
 
@@ -61,11 +69,18 @@ Copy `.env.example` to `.env` and add your API keys:
 cp .env.example .env
 ```
 
-Edit `.env` and add your OpenAI API key:
+Edit `.env` and configure your API keys and Claude Code CLI:
 
 ```bash
+# Required for Phase 2+
 OPENAI_API_KEY=your_key_here
-OPENAI_PLANNER_MODEL=gpt-4  # or gpt-4-turbo, gpt-3.5-turbo
+OPENAI_PLANNER_MODEL=gpt-4  # or gpt-4-turbo, o1-mini, o1-preview
+
+# Optional: Phase 3 Claude Code CLI Integration
+# Leave empty to run in plan-only mode (planning without execution)
+# Set this to enable actual code execution via Claude Code CLI
+# Placeholders: {projectRoot}, {phaseNumber}, {planPath}, {instructionSummary}, {phaseName}, {projectId}
+# CLAUDE_CODE_COMMAND_TEMPLATE=claude code --project "{projectRoot}" --plan-file "{planPath}" --phase {phaseNumber}
 ```
 
 ### Run Development Server
@@ -78,18 +93,33 @@ Server runs on `http://localhost:4001`
 
 ### Run Orchestrator CLI
 
-**Phase 2 Commands:**
+**Phase 3 Commands:**
 
 ```bash
-# Initialize project plan with AI
+# Initialize project plan with AI planner
 npm run orchestrate -- --project demo --init-plan
 
-# Get next phase instruction
+# Get next phase instruction and execute (Phase 3)
+# - If CLAUDE_CODE_COMMAND_TEMPLATE is set: Plans and executes via Claude Code CLI
+# - If not set: Plan-only mode (generates instruction but doesn't execute)
 npm run orchestrate -- --project demo --next-phase
 
-# Basic project start (Phase 1 mode)
+# Basic project start (Phase 1 mode - no planner/coder)
 npm run orchestrate -- --project demo
 ```
+
+**Plan-only Mode vs Execution Mode:**
+
+- **Plan-only mode**: Set when `CLAUDE_CODE_COMMAND_TEMPLATE` is empty
+  - Generates phase instructions using OpenAI planner
+  - Displays instructions but doesn't execute them
+  - Safe for testing planner output
+
+- **Execution mode**: Set when `CLAUDE_CODE_COMMAND_TEMPLATE` is configured
+  - Generates phase instructions using OpenAI planner
+  - Writes instruction to plan file in `state/phase-instructions/`
+  - Executes via Claude Code CLI with configured template
+  - Captures results (stdout/stderr, exit codes, timing)
 
 ## API Endpoints
 
@@ -127,12 +157,22 @@ npm run build
 - Planner model pool with failover
 - Enhanced CLI with `--init-plan` and `--next-phase`
 
+### ✅ Phase 3: Claude Code CLI Executor
+- ClaudeCodeCliExecutor implementation with CoderExecutor interface
+- Config-driven command templates (no hard-coded CLI flags)
+- Plan file generation in `state/phase-instructions/`
+- Child process execution with timeout handling
+- Structured result capture (PhaseExecutionResult)
+- Status categorization: success, failed, timeout, cli_error
+- PhaseRunner integration with optional coder execution
+- Graceful fallback to plan-only mode
+
 ### Next Phases
 
-- **Phase 3**: Add Claude Code CLI executor (coder integration)
-- **Phase 4**: Implement orchestration loop (planner → coder → assess)
+- **Phase 4**: Implement full orchestration loop (planner → coder → assess → iterate)
 - **Phase 5**: Add RAG (Gemini File Search for long-term memory)
 - **Phase 6**: Integrate Skyvern for UI testing
+- **Phase 7**: Multi-project orchestration and advanced error recovery
 
 ## License
 

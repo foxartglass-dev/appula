@@ -9,6 +9,9 @@ export interface AppConfig {
   openaiBaseUrl?: string;
   openaiPlannerModel: string;
   claudeApiKey: string;
+  claudeCodeCommandTemplate: string | null;
+  claudeCodeTimeoutMs: number;
+  claudeCodeWorkingDir: string | null;
   geminiApiKey: string;
   skyvernApiKey: string;
   projectsDir: string;
@@ -22,6 +25,9 @@ export const config: AppConfig = {
   openaiBaseUrl: process.env.OPENAI_BASE_URL,
   openaiPlannerModel: process.env.OPENAI_PLANNER_MODEL || 'gpt-4',
   claudeApiKey: process.env.CLAUDE_API_KEY || '',
+  claudeCodeCommandTemplate: process.env.CLAUDE_CODE_COMMAND_TEMPLATE || null,
+  claudeCodeTimeoutMs: parseInt(process.env.CLAUDE_CODE_TIMEOUT_MS || String(30 * 60 * 1000), 10),
+  claudeCodeWorkingDir: process.env.CLAUDE_CODE_WORKING_DIR || null,
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   skyvernApiKey: process.env.SKYVERN_API_KEY || '',
   projectsDir: process.env.PROJECTS_DIR || './projects',

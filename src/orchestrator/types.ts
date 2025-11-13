@@ -25,6 +25,12 @@ export interface Phase {
   name: string;
   status: PhaseStatus;
   description?: string;
+  result?: {
+    status: 'success' | 'error';
+    logs?: string;
+    error?: string;
+    finishedAt?: string;
+  };
 }
 
 export interface HealthInfo {

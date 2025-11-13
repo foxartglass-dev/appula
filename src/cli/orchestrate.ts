@@ -6,6 +6,7 @@ import { PsoRepo } from '../storage/PsoRepo';
 import { LogRepo } from '../storage/LogRepo';
 import { OpenAIPlanner } from '../llm/OpenAIPlanner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
+import { ClaudeCodeCliExecutor } from '../llm/ClaudeCodeCliExecutor';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -200,16 +201,35 @@ async function main(): Promise<void> {
       );
       const pool = new PlannerModelPool(planner);
 
+      // Load project to get repoPath for executor
+      const project = await projectRepo.load(args.projectId);
+
+      // Phase 3: Create coder executor (optional based on config)
+      const coder = config.claudeCodeCommandTemplate
+        ? new ClaudeCodeCliExecutor(project.repoPath)
+        : null;
+
+      if (coder) {
+        console.log('🤖 Claude Code CLI executor configured');
+      } else {
+        console.log('📝 Plan-only mode (CLAUDE_CODE_COMMAND_TEMPLATE not set)');
+      }
+      console.log('');
+
       // Create project manager with pool
       const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
 
-      // Get next phase instruction
-      const instruction = await projectManager.getNextPhaseInstruction(args.projectId);
+      // Get next phase instruction and optionally execute
+      const instruction = await projectManager.getNextPhaseInstruction(args.projectId, coder);
 
-      console.log('✅ Instruction generated!');
+      console.log('✅ Phase instruction complete!');
       console.log('');
-      console.log('Note: This instruction would be passed to Claude Code CLI');
-      console.log('in a future phase. For now, it\'s just displayed above.');
+      if (coder) {
+        console.log('Instruction was passed to Claude Code CLI for execution.');
+      } else {
+        console.log('Note: To enable code execution, set CLAUDE_CODE_COMMAND_TEMPLATE');
+        console.log('in your .env file. See .env.example for details.');
+      }
       console.log('');
       return;
     }
