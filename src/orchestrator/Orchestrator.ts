@@ -118,8 +118,18 @@ export class Orchestrator {
     // 4) Health monitor hook
     console.log('🏥 Running health check...\n');
 
+    // Phase 5: Build comprehensive context for health monitor
+    const lastExecution = pso.executionHistory && pso.executionHistory.length > 0
+      ? pso.executionHistory[pso.executionHistory.length - 1]
+      : null;
+
     const healthResult = await this.healthMonitor.runHealthCheck({
+      projectId,
       pso,
+      lastPhaseNumber: outcome.phaseNumber,
+      lastExecution,
+      lastAssessment: pso.lastAssessment ?? null,
+      // Legacy Phase 4 fields (still supported)
       phaseNumber: outcome.phaseNumber,
       logsSnippet: logs.slice(0, 4000),
       errorsSnippet: (errors ?? '').slice(0, 1000),

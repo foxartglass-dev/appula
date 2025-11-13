@@ -1,11 +1,26 @@
-import { PlannerHealthStatus, HealthTestResult, HealthCheckResult, ProjectStateObject } from './types';
+import {
+  PlannerHealthStatus,
+  HealthTestResult,
+  HealthCheckResult,
+  ProjectStateObject,
+  PhaseExecutionSummary,
+  PhaseAssessmentSummary,
+  PlannerHealthSnapshot,
+} from './types';
+import { PlannerHealthTester } from './PlannerHealthTester';
 
 /**
  * Phase 4: Context for orchestration health checks
+ * Phase 5: Extended with additional context
  */
 export interface HealthMonitorContext {
+  projectId: string;
   pso: ProjectStateObject;
-  phaseNumber: number | null;
+  lastPhaseNumber: number | null;
+  lastExecution?: PhaseExecutionSummary | null;
+  lastAssessment?: PhaseAssessmentSummary | null;
+  // Legacy fields from Phase 4 (still supported)
+  phaseNumber?: number | null;
   logsSnippet?: string;
   errorsSnippet?: string;
 }
@@ -18,8 +33,55 @@ export interface OrchestrationHealthMonitor {
 }
 
 /**
+ * Phase 5: Real health monitor that runs hallucination tests via PlannerHealthTester
+ */
+export class PlannerHealthMonitor implements OrchestrationHealthMonitor {
+  private readonly tester: PlannerHealthTester;
+
+  constructor(tester: PlannerHealthTester) {
+    this.tester = tester;
+  }
+
+  async runHealthCheck(ctx: HealthMonitorContext): Promise<HealthCheckResult> {
+    const checkedAt = new Date().toISOString();
+
+    try {
+      const snapshot = await this.tester.runHealthChecks();
+
+      const ok = snapshot.status === "ok";
+
+      const suggestedAction: HealthCheckResult["suggestedAction"] =
+        snapshot.status === "ok"
+          ? "continue"
+          : snapshot.status === "degraded"
+          ? "pause"
+          : "require_human";
+
+      const result: HealthCheckResult = {
+        ok,
+        reason: snapshot.summary,
+        suggestedAction,
+        plannerHealth: snapshot,
+        checkedAt,
+      };
+
+      return result;
+    } catch (err) {
+      const result: HealthCheckResult = {
+        ok: false,
+        reason: `Health check failed to run: ${String(err)}`,
+        suggestedAction: "pause",
+        plannerHealth: null,
+        checkedAt,
+      };
+      return result;
+    }
+  }
+}
+
+/**
  * Phase 4: No-op health monitor that always returns "ok"
- * Future phases will implement real hallucination tests here
+ * Used as fallback when OpenAI config is not available
  */
 export class NoopHealthMonitor implements OrchestrationHealthMonitor {
   async runHealthCheck(_ctx: HealthMonitorContext): Promise<HealthCheckResult> {
@@ -27,8 +89,9 @@ export class NoopHealthMonitor implements OrchestrationHealthMonitor {
     return {
       ok: true,
       checkedAt: now,
-      reason: 'Noop health monitor: detailed hallucination tests not implemented yet.',
+      reason: 'Noop health monitor: health checks disabled.',
       suggestedAction: 'continue',
+      plannerHealth: null,
     };
   }
 }

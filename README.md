@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 4.5
+## Current Status: Phase 5
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -47,6 +47,16 @@ AI orchestration system combining multiple AI agents for software development au
 - NotificationService abstraction for extensible notification channels
 - Automatic alerts with project status, planner assessment, and execution details
 - Graceful fallback when Twilio is not configured
+
+### Phase 5: Hallucination Tests & Advanced Health Monitor ✅
+- Real hallucination detection via probe tests (math, code reasoning, instruction following)
+- PlannerHealthTester runs lightweight tests against OpenAI planner model
+- PlannerHealthSnapshot with scores, statuses, and detailed test results
+- Health monitoring integrated into orchestration cycle
+- Blocking and notifications triggered on health failures
+- Manual health check via `--health-check` CLI command
+- Quality scoring (ok/degraded/failing) with suggested actions (continue/pause/require_human)
+- Foundation for future model handoff and multi-model committee logic
 
 ## Project Structure
 
@@ -108,15 +118,19 @@ Server runs on `http://localhost:4001`
 
 ### Run Orchestrator CLI
 
-**Phase 4 Commands:**
+**Phase 4+ Commands:**
 
 ```bash
 # Initialize project plan with AI planner
 npm run orchestrate -- --project demo --init-plan
 
-# Run full orchestration cycle (Phase 4) - RECOMMENDED
+# Run full orchestration cycle (Phase 4+) - RECOMMENDED
 # Automatically: plans (if needed) → executes → assesses → health checks
 npm run orchestrate -- --project demo --cycle
+
+# Run planner health check (Phase 5)
+# Runs hallucination tests and displays health status
+npm run orchestrate -- --project demo --health-check
 
 # Get next phase instruction and execute (Phase 3)
 # - If CLAUDE_CODE_COMMAND_TEMPLATE is set: Plans and executes via Claude Code CLI
@@ -194,6 +208,51 @@ npm run orchestrate -- --project demo --cycle
 # → Console shows: "⚠️  Orchestration blocked. Human input or intervention required."
 ```
 
+**Planner Health Monitoring (Phase 5):**
+
+Appula continuously monitors planner health through automated hallucination tests.
+
+- **Health Tests**: Three lightweight probe tests run against the planner model:
+  - **Math Sanity**: Basic arithmetic consistency (17 × 12 = ?)
+  - **Code Reasoning**: JavaScript knowledge verification (Array.map behavior)
+  - **Instruction Following**: Strict instruction adherence (respond with "OK" only)
+
+- **Health Scoring**:
+  - Each test produces a 0–1 score (pass/fail)
+  - Overall score is averaged across all tests
+  - Status determined by score:
+    - `ok`: score ≥ 0.85 → suggested action: `continue`
+    - `degraded`: 0.60 ≤ score < 0.85 → suggested action: `pause`
+    - `failing`: score < 0.60 → suggested action: `require_human`
+
+- **Integration**:
+  - Health checks run automatically during `--cycle` orchestration
+  - Results stored in PSO as `lastHealthCheck`
+  - Failed health checks can block orchestration and trigger SMS notifications
+  - Manual health checks available via `--health-check` command
+
+- **Configuration**:
+  - Requires `OPENAI_API_KEY` and `OPENAI_PLANNER_MODEL` in `.env`
+  - Automatically enabled when OpenAI is configured
+  - Falls back to NoopHealthMonitor if not configured
+
+Example usage:
+```bash
+# Run manual health check
+npm run orchestrate -- --project demo --health-check
+
+# Output includes:
+# - Model ID and overall status
+# - Individual test results with scores
+# - Suggested action (continue/pause/require_human)
+# - Results saved to PSO for history tracking
+
+# Health checks also run automatically during orchestration cycles
+npm run orchestrate -- --project demo --cycle
+# → If health score < 0.85, cycle may be blocked
+# → SMS notification sent if Twilio configured
+```
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -260,10 +319,22 @@ npm run build
 - SMS includes project status, planner assessment, and execution results
 - CLI shows notification status on startup
 
+### ✅ Phase 5: Hallucination Tests & Advanced Health Monitor
+- PlannerHealthTester with three probe tests (math, code reasoning, instruction following)
+- PlannerHealthSnapshot type with scores, status, and test details
+- PlannerHealthMonitor implementation using PlannerHealthTester
+- Health checks integrated into orchestration cycle
+- HealthCheckResult extended with plannerHealth field
+- Health-based blocking (pause/require_human suggestions)
+- Manual health check via `--health-check` CLI command
+- Health results stored in PSO (lastHealthCheck field)
+- Quality scoring: ok (≥0.85), degraded (≥0.60), failing (<0.60)
+- Suggested actions: continue, pause, switch_model, require_human
+- Foundation for future model handoff and multi-model committee logic
+
 ### Next Phases
 
-- **Phase 5**: Implement hallucination tests and advanced health monitoring
-- **Phase 6**: Add RAG (Gemini File Search for long-term memory)
+- **Phase 6**: Add RAG (Gemini File Search for long-term memory) + baton handoff hooks
 - **Phase 7**: Integrate Skyvern for UI testing
 - **Phase 8**: Multi-model committee/voting logic (CommitteeEngine)
 - **Phase 9**: Multi-project orchestration and advanced error recovery

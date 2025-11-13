@@ -9,7 +9,12 @@ import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { ClaudeCodeCliExecutor } from '../llm/ClaudeCodeCliExecutor';
 import { PhaseRunner } from '../orchestrator/PhaseRunner';
 import { Orchestrator } from '../orchestrator/Orchestrator';
-import { NoopHealthMonitor } from '../orchestrator/HealthMonitor';
+import {
+  OrchestrationHealthMonitor,
+  PlannerHealthMonitor,
+  NoopHealthMonitor,
+} from '../orchestrator/HealthMonitor';
+import { PlannerHealthTester } from '../orchestrator/PlannerHealthTester';
 import {
   NotificationService,
   TwilioNotificationService,
@@ -26,6 +31,7 @@ function parseArgs(): {
   initPlan?: boolean;
   nextPhase?: boolean;
   cycle?: boolean;
+  healthCheck?: boolean;
 } {
   const args = process.argv.slice(2);
   const result: {
@@ -34,6 +40,7 @@ function parseArgs(): {
     initPlan?: boolean;
     nextPhase?: boolean;
     cycle?: boolean;
+    healthCheck?: boolean;
   } = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -50,6 +57,8 @@ function parseArgs(): {
       result.nextPhase = true;
     } else if (arg === '--cycle') {
       result.cycle = true;
+    } else if (arg === '--health-check') {
+      result.healthCheck = true;
     }
   }
 
@@ -73,6 +82,7 @@ Options:
   --init-plan           Initialize project plan with AI planner
   --next-phase          Get next phase instruction from planner
   --cycle               Run full orchestration cycle (plan → execute → assess → health)
+  --health-check        Run planner health check and display results
   --help, -h            Show this help message
 
 Examples:
@@ -82,8 +92,11 @@ Examples:
   # Get next phase instruction
   npm run orchestrate -- --project demo --next-phase
 
-  # Run a full orchestration cycle (Phase 4)
+  # Run a full orchestration cycle (Phase 4+)
   npm run orchestrate -- --project demo --cycle
+
+  # Run planner health check (Phase 5)
+  npm run orchestrate -- --project demo --health-check
 
   # Basic project start (Phase 1 behavior)
   npm run orchestrate -- --project demo
@@ -128,6 +141,8 @@ async function main(): Promise<void> {
 
   const phaseVersion = args.cycle
     ? 'Phase 4'
+    : args.healthCheck
+    ? 'Phase 5'
     : args.initPlan || args.nextPhase
     ? 'Phase 2'
     : 'Phase 1';
@@ -291,8 +306,18 @@ async function main(): Promise<void> {
       // Create phase runner with optional coder
       const phaseRunner = new PhaseRunner(pool, logRepo, coder);
 
-      // Create health monitor
-      const healthMonitor = new NoopHealthMonitor();
+      // Phase 5: Create health monitor based on OpenAI config
+      let healthMonitor: OrchestrationHealthMonitor;
+
+      if (config.openaiApiKey && config.openaiPlannerModel) {
+        const tester = new PlannerHealthTester();
+        healthMonitor = new PlannerHealthMonitor(tester);
+        console.log('🧠 Planner health monitor enabled');
+      } else {
+        healthMonitor = new NoopHealthMonitor();
+        console.log('🧠 Planner health monitor disabled (no OpenAI config)');
+      }
+      console.log('');
 
       // Phase 4.5: Create notification service based on config
       let notificationService: NotificationService;
@@ -345,6 +370,96 @@ async function main(): Promise<void> {
         console.log('⚠️  Orchestration blocked. Human input or intervention required.');
       } else {
         console.log('✅ Cycle complete. Run again to continue to next phase.');
+      }
+      console.log('');
+      return;
+    }
+
+    // Handle health-check (Phase 5)
+    if (args.healthCheck) {
+      console.log('🎯 Mode: Planner Health Check\n');
+
+      // Validate OpenAI config
+      validateConfig(true);
+
+      // Create health monitor
+      let healthMonitor: OrchestrationHealthMonitor;
+
+      if (config.openaiApiKey && config.openaiPlannerModel) {
+        const tester = new PlannerHealthTester();
+        healthMonitor = new PlannerHealthMonitor(tester);
+        console.log('🧠 Planner health monitor enabled\n');
+      } else {
+        console.log('❌ OpenAI configuration required for health checks');
+        console.log('   Please set OPENAI_API_KEY and OPENAI_PLANNER_MODEL in .env\n');
+        process.exit(1);
+      }
+
+      // Load PSO
+      const pso = await psoRepo.load(args.projectId);
+
+      if (!pso) {
+        console.log(`❌ Project state not found for "${args.projectId}"`);
+        console.log('   Please run --init-plan first to create project state.\n');
+        process.exit(1);
+      }
+
+      // Build context for health check
+      const lastExecution = pso.executionHistory && pso.executionHistory.length > 0
+        ? pso.executionHistory[pso.executionHistory.length - 1]
+        : null;
+
+      const lastPhaseNumber = pso.currentPhase ?? (lastExecution?.phaseNumber ?? null);
+
+      const ctx = {
+        projectId: args.projectId,
+        pso,
+        lastPhaseNumber,
+        lastExecution,
+        lastAssessment: pso.lastAssessment ?? null,
+      };
+
+      // Run health check
+      console.log('Running planner health checks...\n');
+      const healthResult = await healthMonitor.runHealthCheck(ctx);
+
+      // Save to PSO
+      pso.lastHealthCheck = healthResult;
+      await psoRepo.save(pso);
+
+      // Display results
+      console.log('╔═══════════════════════════════════════════╗');
+      console.log('║        Appula Planner Health Check        ║');
+      console.log('╚═══════════════════════════════════════════╝\n');
+
+      if (healthResult.plannerHealth) {
+        const ph = healthResult.plannerHealth;
+        console.log(`Model:           ${ph.modelId}`);
+        console.log(`Status:          ${ph.status}`);
+        console.log(`Overall Score:   ${ph.overallScore.toFixed(2)}`);
+        console.log(`Summary:         ${ph.summary}\n`);
+        console.log('Tests:');
+
+        for (const test of ph.tests) {
+          const icon = test.passed ? '✅' : '❌';
+          console.log(`  ${icon} ${test.name.padEnd(25)} (score=${test.score.toFixed(2)})`);
+          if (test.details) {
+            console.log(`     ${test.details}`);
+          }
+        }
+        console.log('');
+      } else {
+        console.log(`Status:          ${healthResult.ok ? 'OK' : 'Failed'}`);
+        console.log(`Reason:          ${healthResult.reason ?? 'n/a'}\n`);
+      }
+
+      console.log(`Suggested Action: ${healthResult.suggestedAction ?? 'continue'}\n`);
+      console.log('═══════════════════════════════════════════\n');
+
+      if (healthResult.ok) {
+        console.log('✅ Planner health check passed!');
+      } else {
+        console.log('⚠️  Planner health check failed. Review results above.');
       }
       console.log('');
       return;

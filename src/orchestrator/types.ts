@@ -130,12 +130,37 @@ export interface UiTestResult {
 }
 
 /**
+ * Phase 5: Individual hallucination test result
+ */
+export interface HallucinationTestResult {
+  name: string;                 // e.g. "math_sanity", "code_reasoning"
+  passed: boolean;
+  score: number;                // 0–1
+  details?: string;
+  ranAt: string;                // ISO timestamp
+}
+
+/**
+ * Phase 5: Planner health snapshot from hallucination tests
+ */
+export interface PlannerHealthSnapshot {
+  modelId: string;
+  overallScore: number;         // 0–1 aggregate from all tests
+  tests: HallucinationTestResult[];
+  status: "ok" | "degraded" | "failing";
+  summary: string;
+  checkedAt: string;
+}
+
+/**
  * Phase 4: Health check result for orchestration cycles
+ * Phase 5: Extended with plannerHealth
  */
 export interface HealthCheckResult {
   ok: boolean;
   reason?: string;
   suggestedAction?: 'continue' | 'pause' | 'switch_model' | 'require_human';
+  plannerHealth?: PlannerHealthSnapshot | null;
   checkedAt: string;
 }
 
