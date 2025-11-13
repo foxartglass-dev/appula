@@ -10,6 +10,11 @@ import { ClaudeCodeCliExecutor } from '../llm/ClaudeCodeCliExecutor';
 import { PhaseRunner } from '../orchestrator/PhaseRunner';
 import { Orchestrator } from '../orchestrator/Orchestrator';
 import { NoopHealthMonitor } from '../orchestrator/HealthMonitor';
+import {
+  NotificationService,
+  TwilioNotificationService,
+  NoopNotificationService,
+} from '../notifications/NotificationService';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -289,13 +294,31 @@ async function main(): Promise<void> {
       // Create health monitor
       const healthMonitor = new NoopHealthMonitor();
 
+      // Phase 4.5: Create notification service based on config
+      let notificationService: NotificationService;
+
+      if (
+        config.twilioAccountSid &&
+        config.twilioAuthToken &&
+        config.twilioFromNumber &&
+        config.notifySmsTo
+      ) {
+        notificationService = new TwilioNotificationService();
+        console.log('🔔 SMS notifications enabled via Twilio');
+      } else {
+        notificationService = new NoopNotificationService();
+        console.log('🔕 SMS notifications disabled (Twilio env not configured)');
+      }
+      console.log('');
+
       // Create orchestrator
       const orchestrator = new Orchestrator(
         projectManager,
         phaseRunner,
         pool,
         logRepo,
-        healthMonitor
+        healthMonitor,
+        notificationService
       );
 
       // Run single orchestration cycle

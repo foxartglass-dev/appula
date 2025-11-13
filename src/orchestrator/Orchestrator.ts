@@ -4,6 +4,7 @@ import { PhaseRunner, PhaseRunOutcome } from './PhaseRunner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { OrchestrationHealthMonitor, NoopHealthMonitor } from './HealthMonitor';
 import { LogRepo } from '../storage/LogRepo';
+import { NotificationService, NoopNotificationService } from '../notifications/NotificationService';
 
 /**
  * Phase 4: Result of an orchestration cycle
@@ -21,6 +22,7 @@ export interface OrchestrationResult {
 
 /**
  * Phase 4: Orchestrator that runs full plan → execute → assess → health cycles
+ * Phase 4.5: Added notification support for blocked cycles
  */
 export class Orchestrator {
   constructor(
@@ -29,6 +31,7 @@ export class Orchestrator {
     private readonly plannerPool: PlannerModelPool,
     private readonly logRepo: LogRepo,
     private readonly healthMonitor: OrchestrationHealthMonitor = new NoopHealthMonitor(),
+    private readonly notifications: NotificationService = new NoopNotificationService(),
   ) {}
 
   /**
@@ -162,8 +165,8 @@ export class Orchestrator {
 
     const done = !blocked && allPhasesProcessed;
 
-    // 7) Return summary
-    return {
+    // 7) Build result summary
+    const result: OrchestrationResult = {
       projectId,
       phaseNumber: outcome.phaseNumber,
       plannerStatus: assessment.status,
@@ -173,5 +176,12 @@ export class Orchestrator {
       done,
       blocked,
     };
+
+    // Phase 4.5: Send notification when blocked
+    if (result.blocked) {
+      await this.notifications.notifyHumanNeeded(result);
+    }
+
+    return result;
   }
 }

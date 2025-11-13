@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 4
+## Current Status: Phase 4.5
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -41,6 +41,12 @@ AI orchestration system combining multiple AI agents for software development au
 - Assessment summaries stored in PSO
 - Done/blocked status determination for automated workflows
 - New CLI command: `--cycle` for single orchestration cycles
+
+### Phase 4.5: Notification Hooks & SMS Alerts ✅
+- SMS notifications via Twilio when orchestration cycles are blocked
+- NotificationService abstraction for extensible notification channels
+- Automatic alerts with project status, planner assessment, and execution details
+- Graceful fallback when Twilio is not configured
 
 ## Project Structure
 
@@ -154,6 +160,40 @@ The `--cycle` command runs a complete orchestration cycle:
   - Executes via Claude Code CLI with configured template
   - Captures results (stdout/stderr, exit codes, timing)
 
+**SMS Notifications (Phase 4.5):**
+
+Appula can send SMS alerts when orchestration cycles are blocked and require human intervention.
+
+- **Configuration**: Set Twilio environment variables in `.env`:
+  ```bash
+  TWILIO_ACCOUNT_SID=your_account_sid
+  TWILIO_AUTH_TOKEN=your_auth_token
+  TWILIO_FROM_NUMBER=+15555555555
+  NOTIFY_SMS_TO=+15555555555
+  ```
+
+- **Behavior**: When `--cycle` results in `blocked=true`, an SMS is automatically sent with:
+  - Project ID and phase number
+  - Planner status (ok, needs_fix, stuck, human_input)
+  - Execution status
+  - Health check results
+  - Assessment notes (truncated to 160 characters)
+
+- **Graceful fallback**: If Twilio credentials are not configured, notifications are disabled and the CLI will show:
+  ```
+  🔕 SMS notifications disabled (Twilio env not configured)
+  ```
+
+Example workflow:
+```bash
+# Run orchestration with SMS notifications enabled
+npm run orchestrate -- --project demo --cycle
+
+# If project becomes blocked (e.g., planner returns "human_input"):
+# → SMS is sent to NOTIFY_SMS_TO
+# → Console shows: "⚠️  Orchestration blocked. Human input or intervention required."
+```
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -210,6 +250,15 @@ npm run build
 - CLI `--cycle` command for single orchestration cycles
 - Done/blocked status determination
 - Health check hooks for future hallucination tests
+
+### ✅ Phase 4.5: Notification Hooks & SMS Alerts
+- NotificationService interface abstraction
+- TwilioNotificationService implementation for SMS alerts
+- NoopNotificationService as default (graceful fallback)
+- Automatic SMS notifications when orchestration cycles are blocked
+- Configurable via Twilio environment variables
+- SMS includes project status, planner assessment, and execution results
+- CLI shows notification status on startup
 
 ### Next Phases
 

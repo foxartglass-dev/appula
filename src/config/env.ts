@@ -17,6 +17,11 @@ export interface AppConfig {
   projectsDir: string;
   stateDir: string;
   logsDir: string;
+  // Phase 4.5: Twilio SMS notifications
+  twilioAccountSid: string | null;
+  twilioAuthToken: string | null;
+  twilioFromNumber: string | null;
+  notifySmsTo: string | null;
 }
 
 export const config: AppConfig = {
@@ -33,6 +38,11 @@ export const config: AppConfig = {
   projectsDir: process.env.PROJECTS_DIR || './projects',
   stateDir: process.env.STATE_DIR || './state',
   logsDir: process.env.LOGS_DIR || './state/logs',
+  // Phase 4.5: Twilio SMS notifications
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || null,
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || null,
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || null,
+  notifySmsTo: process.env.NOTIFY_SMS_TO || null,
 };
 
 export function validateConfig(requireOpenAI: boolean = false): void {
