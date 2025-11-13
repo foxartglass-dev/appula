@@ -20,6 +20,9 @@ export interface AppConfig {
   skyvernApiKey: string | null;
   skyvernBaseUrl: string;
   skyvernDefaultAppUrl: string;
+  // Phase 8: Committee planner configuration
+  committeeEnabled: boolean;
+  committeePlannerModels: string[];
   projectsDir: string;
   stateDir: string;
   logsDir: string;
@@ -47,6 +50,11 @@ export const config: AppConfig = {
   skyvernApiKey: process.env.SKYVERN_API_KEY || null,
   skyvernBaseUrl: process.env.SKYVERN_BASE_URL || 'https://api.skyvern.ai',
   skyvernDefaultAppUrl: process.env.SKYVERN_DEFAULT_APP_URL || 'http://localhost:3000',
+  // Phase 8: Committee planner configuration
+  committeeEnabled: process.env.COMMITTEE_ENABLED === 'true',
+  committeePlannerModels: process.env.COMMITTEE_PLANNER_MODELS
+    ? process.env.COMMITTEE_PLANNER_MODELS.split(',').map(m => m.trim()).filter(m => m.length > 0)
+    : [],
   projectsDir: process.env.PROJECTS_DIR || './projects',
   stateDir: process.env.STATE_DIR || './state',
   logsDir: process.env.LOGS_DIR || './state/logs',

@@ -75,6 +75,8 @@ export interface ProjectStateObject {
   lastHealthCheck?: HealthCheckResult | null;
   // Phase 7: UI test tracking
   lastUiTestRun?: UiTestRunSummary | null;
+  // Phase 8: Committee decision tracking
+  lastCommitteeDecision?: CommitteePhaseDecision | null;
 }
 
 export interface PlanProjectResult {
@@ -113,6 +115,9 @@ export interface RunInstructionResult {
   errors?: string;
 }
 
+/**
+ * Phase 1: Generic committee types (legacy)
+ */
 export interface CommitteeCandidate {
   id: string;
   content: string;
@@ -123,6 +128,31 @@ export interface CommitteeDecision {
   finalContent: string;
   chosenCandidateId?: string;
   notes?: string;
+}
+
+/**
+ * Phase 8: Committee planner proposal from a single model
+ */
+export interface CommitteeMemberProposal {
+  memberId: string;            // e.g. "planner-1", "planner-2"
+  modelName: string;           // e.g. "gpt-4", "gpt-4o", "o1-mini"
+  instruction: string;         // proposed next-phase instruction
+  rationale?: string;          // optional explanation
+}
+
+/**
+ * Phase 8: Committee decision for phase planning
+ */
+export interface CommitteePhaseDecision {
+  projectId: string;
+  phaseNumber: number;
+  finalInstruction: string;
+  winnerMemberId: string;
+  winnerModelName: string;
+  tieBroken: boolean;
+  notes?: string;
+  proposals: CommitteeMemberProposal[]; // original proposals for audit
+  decidedAt: string;                    // ISO timestamp
 }
 
 /**

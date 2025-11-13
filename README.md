@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 7
+## Current Status: Phase 8
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -83,6 +83,20 @@ AI orchestration system combining multiple AI agents for software development au
 - OrchestrationResult extended with uiTestStatus and uiTestSummary
 - Test results tracked with passed/failed/skipped/not_configured statuses
 - Foundation for automated regression testing and continuous UI validation
+
+### Phase 8: Multi-Model Committee Planner ✅
+- Multi-model committee decision making for phase planning
+- CommitteeEngine coordinates "round table" of planner models
+- Each committee member proposes an instruction for the next phase
+- DecisionAggregator uses deterministic heuristic to choose best proposal (longest instruction wins)
+- Committee types: CommitteeMemberProposal, CommitteePhaseDecision
+- ProjectStateObject tracks lastCommitteeDecision with full audit trail
+- PhaseRunner seamlessly switches between single-planner and committee modes
+- Committee mode enabled via COMMITTEE_ENABLED and COMMITTEE_PLANNER_MODELS env vars
+- Requires at least 2 models for committee mode (e.g., gpt-4, gpt-4o, o1-mini)
+- Graceful degradation: Falls back to single planner if committee not configured
+- Committee decisions include winner metadata, tie-breaking info, and all proposals
+- Foundation for advanced multi-model voting, synthesis, and consensus algorithms
 
 ## Project Structure
 
@@ -393,6 +407,69 @@ npm run orchestrate -- --project demo --cycle
 # → SMS notification sent if Twilio configured
 ```
 
+**Multi-Model Committee Planner (Phase 8):**
+
+Appula supports multi-model committee planning where multiple AI models collaborate to plan the next phase.
+
+- **Committee Mode**: Multiple planner models propose instructions, aggregator picks the best
+- **Decision Making**: DecisionAggregator uses deterministic heuristic (longest instruction wins)
+- **Round Table**: Each committee member (different OpenAI model) proposes independently
+- **Winner Selection**: Aggregator compares all proposals and selects winner with tie-breaking
+- **Audit Trail**: Full committee decision stored in PSO with all proposals and metadata
+
+- **Configuration**: Set committee environment variables in `.env`:
+  ```bash
+  COMMITTEE_ENABLED=true
+  COMMITTEE_PLANNER_MODELS=gpt-4,gpt-4o,o1-mini
+  ```
+
+- **Requirements**:
+  - At least 2 models required for committee mode
+  - All models must be valid OpenAI model names
+  - Each model receives same OpenAI API key and base URL
+  - Models automatically get RAG memory context if enabled
+
+- **Behavior**:
+  - When enabled and ≥ 2 models: Committee planning activated
+  - When disabled or < 2 models: Falls back to single planner (existing behavior)
+  - Failed committee members skipped (committee proceeds with successful members)
+  - If all members fail: Error raised, phase marked as blocked
+  - Committee decisions logged with winner, proposal count, and tie-breaking status
+
+- **Decision Heuristic** (Phase 8 - simple and deterministic):
+  1. Filter out empty proposals
+  2. Find proposal with longest instruction (proxy for detail)
+  3. If tie: Pick first in list, mark `tieBroken: true`
+  4. Store all proposals in PSO for audit
+
+Example usage:
+```bash
+# Enable committee mode in .env
+COMMITTEE_ENABLED=true
+COMMITTEE_PLANNER_MODELS=gpt-4,gpt-4o,o1-mini
+
+# Run orchestration with committee
+npm run orchestrate -- --project demo --cycle
+
+# Output includes:
+# 🧠 Committee mode: ON with 3 members [gpt-4, gpt-4o, o1-mini]
+# 🤝 Committee planning phase X: [phase name]
+#    📋 Requesting proposal from planner-1 (gpt-4)...
+#    ✅ Received proposal from planner-1 (1234 chars)
+#    [... repeat for each member ...]
+# 🎯 Aggregating 3 proposal(s)...
+#    Winner: planner-2 (gpt-4o)
+#    Decision: Selected proposal with max length 1456 chars from 3 total
+
+# Committee decision stored in PSO:
+# - finalInstruction: [chosen instruction text]
+# - winnerMemberId: "planner-2"
+# - winnerModelName: "gpt-4o"
+# - tieBroken: false
+# - proposals: [array of all 3 proposals with metadata]
+# - decidedAt: [ISO timestamp]
+```
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -500,12 +577,28 @@ npm run build
 - Hardcoded smoke tests (homepage load, navigation) ready for future customization
 - Foundation for automated regression testing and continuous UI validation
 
+### ✅ Phase 8: Multi-Model Committee Planner & Decision Aggregator
+- CommitteeEngine for multi-model "round table" planning
+- DecisionAggregator with deterministic heuristic (longest instruction wins, tie-broken by order)
+- Committee types: CommitteeMemberProposal, CommitteePhaseDecision
+- Each committee member is a separate OpenAI planner instance with different model
+- CommitteeEngine.planNextPhaseWithCommittee() collects proposals from all members
+- Error handling: Failed members skipped, committee proceeds with successful proposals
+- PhaseRunner enhanced to detect and use committee mode when configured
+- ProjectStateObject extended with lastCommitteeDecision field for audit trail
+- CLI wiring: COMMITTEE_ENABLED and COMMITTEE_PLANNER_MODELS env vars
+- Committee requires at least 2 models (e.g., "gpt-4,gpt-4o,o1-mini")
+- Graceful degradation: Falls back to single planner when committee disabled or < 2 models
+- Committee decisions include winner metadata, tie-breaking status, and all proposals
+- Integration with --cycle command for full orchestration with committee planning
+- Foundation for advanced voting algorithms, synthesis, and consensus mechanisms
+
 ### Next Phases
 
-- **Phase 8**: Multi-model committee/voting logic (CommitteeEngine) with baton handoff
-- **Phase 9**: Multi-project orchestration and advanced error recovery
-- **Phase 10**: Real Gemini RAG integration with actual HTTP calls
-- **Phase 11**: Real Skyvern HTTP integration with actual browser automation
+- **Phase 9**: Health-based baton handoff with automatic model switching
+- **Phase 10**: Multi-project orchestration and advanced error recovery
+- **Phase 11**: Real Gemini RAG integration with actual HTTP calls
+- **Phase 12**: Real Skyvern HTTP integration with actual browser automation
 
 ## License
 

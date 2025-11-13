@@ -24,6 +24,8 @@ import { RagClient, NullRagClient } from '../rag/RagClient';
 import { GeminiFileSearchClient } from '../rag/GeminiFileSearchClient';
 import { MemoryManager } from '../rag/MemoryManager';
 import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
+import { CommitteeEngine, CommitteeMember } from '../orchestrator/CommitteeEngine';
+import { DecisionAggregator } from '../llm/DecisionAggregator';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -350,8 +352,39 @@ async function main(): Promise<void> {
       // Create project manager with pool
       const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
 
-      // Create phase runner with optional coder
-      const phaseRunner = new PhaseRunner(pool, logRepo, coder);
+      // Phase 8: Build committee if enabled
+      let committeeEngine: CommitteeEngine | null = null;
+
+      if (config.committeeEnabled && config.committeePlannerModels.length >= 2) {
+        const committeeMembers: CommitteeMember[] = config.committeePlannerModels.map((modelName, index) => {
+          const memberPlanner = new OpenAIPlanner(
+            config.openaiApiKey,
+            modelName,
+            config.openaiBaseUrl,
+            memoryManager
+          );
+          return {
+            id: `planner-${index + 1}`,
+            modelName,
+            planner: memberPlanner,
+          };
+        });
+
+        const aggregator = new DecisionAggregator();
+        committeeEngine = new CommitteeEngine(committeeMembers, aggregator);
+
+        console.log(`🧠 Committee mode: ON with ${committeeMembers.length} members [${config.committeePlannerModels.join(', ')}]`);
+        console.log('');
+      } else if (config.committeeEnabled && config.committeePlannerModels.length < 2) {
+        console.log('⚠️  Committee mode: DISABLED (need at least 2 models, found ' + config.committeePlannerModels.length + ')');
+        console.log('');
+      } else {
+        console.log('🧠 Committee mode: OFF (single planner)');
+        console.log('');
+      }
+
+      // Create phase runner with optional coder and committee
+      const phaseRunner = new PhaseRunner(pool, logRepo, coder, committeeEngine);
 
       // Phase 5: Create health monitor based on OpenAI config
       let healthMonitor: OrchestrationHealthMonitor;
