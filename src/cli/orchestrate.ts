@@ -23,6 +23,7 @@ import {
 import { RagClient, NullRagClient } from '../rag/RagClient';
 import { GeminiFileSearchClient } from '../rag/GeminiFileSearchClient';
 import { MemoryManager } from '../rag/MemoryManager';
+import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -36,6 +37,7 @@ function parseArgs(): {
   cycle?: boolean;
   healthCheck?: boolean;
   ragRefresh?: boolean;
+  uiTest?: boolean;
 } {
   const args = process.argv.slice(2);
   const result: {
@@ -46,6 +48,7 @@ function parseArgs(): {
     cycle?: boolean;
     healthCheck?: boolean;
     ragRefresh?: boolean;
+    uiTest?: boolean;
   } = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -66,6 +69,8 @@ function parseArgs(): {
       result.healthCheck = true;
     } else if (arg === '--rag-refresh') {
       result.ragRefresh = true;
+    } else if (arg === '--ui-test') {
+      result.uiTest = true;
     }
   }
 
@@ -91,6 +96,7 @@ Options:
   --cycle               Run full orchestration cycle (plan → execute → assess → health)
   --health-check        Run planner health check and display results
   --rag-refresh         Index current project snapshot into RAG memory
+  --ui-test             Run UI tests via Skyvern (Phase 7)
   --help, -h            Show this help message
 
 Examples:
@@ -108,6 +114,9 @@ Examples:
 
   # Refresh RAG memory with current project state (Phase 6)
   npm run orchestrate -- --project demo --rag-refresh
+
+  # Run UI tests via Skyvern (Phase 7)
+  npm run orchestrate -- --project demo --ui-test
 
   # Basic project start (Phase 1 behavior)
   npm run orchestrate -- --project demo
@@ -156,6 +165,8 @@ async function main(): Promise<void> {
     ? 'Phase 5'
     : args.ragRefresh
     ? 'Phase 6'
+    : args.uiTest
+    ? 'Phase 7'
     : args.initPlan || args.nextPhase
     ? 'Phase 2'
     : 'Phase 1';
@@ -372,6 +383,9 @@ async function main(): Promise<void> {
       }
       console.log('');
 
+      // Phase 7: Initialize UI test orchestrator
+      const uiTestOrchestrator = new UITestOrchestrator();
+
       // Create orchestrator
       const orchestrator = new Orchestrator(
         projectManager,
@@ -379,7 +393,8 @@ async function main(): Promise<void> {
         pool,
         logRepo,
         healthMonitor,
-        notificationService
+        notificationService,
+        uiTestOrchestrator
       );
 
       // Run single orchestration cycle
@@ -531,6 +546,86 @@ async function main(): Promise<void> {
       console.log('✅ RAG refresh complete!');
       console.log('');
       console.log('The planner will now have access to this historical context.');
+      console.log('');
+      return;
+    }
+
+    // Handle ui-test (Phase 7)
+    if (args.uiTest) {
+      console.log('🎯 Mode: UI Testing (Skyvern)\n');
+
+      // Load project config and PSO
+      const project = await projectRepo.load(args.projectId);
+      const pso = await psoRepo.load(args.projectId);
+
+      if (!pso) {
+        console.log(`❌ Project state not found for "${args.projectId}"`);
+        console.log('   Please run --init-plan first to create project state.\n');
+        process.exit(1);
+      }
+
+      // Initialize UI test orchestrator
+      const uiTestOrchestrator = new UITestOrchestrator();
+
+      // Run UI tests
+      console.log('Running UI tests for project...\n');
+      const summary = await uiTestOrchestrator.runUiTests(pso);
+
+      // Update PSO with test results
+      pso.lastUiTestRun = summary;
+      await psoRepo.save(pso);
+
+      // Display results
+      console.log('\n╔═══════════════════════════════════════════╗');
+      console.log('║      Appula UI Test Results (Phase 7)     ║');
+      console.log('╚═══════════════════════════════════════════╝\n');
+      console.log(`Project:   ${project.name}`);
+      console.log(`Phase:     ${pso.currentPhase ?? 'N/A'}`);
+      console.log(`Status:    ${summary.status}`);
+      console.log(`Total:     ${summary.results.length} test case(s)`);
+      console.log(`Passed:    ${summary.results.filter(r => r.status === 'passed').length}`);
+      console.log(`Failed:    ${summary.results.filter(r => r.status === 'failed').length}`);
+      console.log(`Skipped:   ${summary.results.filter(r => r.status === 'skipped').length}`);
+      console.log('');
+
+      if (summary.notes) {
+        console.log(`Notes:     ${summary.notes}`);
+        console.log('');
+      }
+
+      // Display individual test results
+      if (summary.results.length > 0) {
+        console.log('═══════════════════════════════════════════');
+        console.log('Individual Test Results:');
+        console.log('═══════════════════════════════════════════\n');
+
+        for (const result of summary.results) {
+          const statusIcon = result.status === 'passed' ? '✅'
+            : result.status === 'failed' ? '❌'
+            : result.status === 'skipped' ? '⏭️'
+            : '⚠️';
+
+          console.log(`${statusIcon} ${result.name}`);
+          console.log(`   Status: ${result.status}`);
+          if (result.details) {
+            console.log(`   Details: ${result.details}`);
+          }
+          console.log('');
+        }
+      }
+
+      console.log('═══════════════════════════════════════════\n');
+
+      if (summary.status === 'failed') {
+        console.log('❌ UI tests failed! Please review and fix issues.');
+      } else if (summary.status === 'passed') {
+        console.log('✅ All UI tests passed!');
+      } else if (summary.status === 'not_configured') {
+        console.log('⚠️  UI testing not configured. Set SKYVERN_API_KEY to enable.');
+      } else {
+        console.log('⏭️  UI tests were skipped.');
+      }
+
       console.log('');
       return;
     }

@@ -16,7 +16,10 @@ export interface AppConfig {
   // Phase 6: Gemini RAG configuration
   geminiRagEndpoint: string | null;
   geminiRagDataStoreId: string | null;
-  skyvernApiKey: string;
+  // Phase 7: Skyvern UI testing configuration
+  skyvernApiKey: string | null;
+  skyvernBaseUrl: string;
+  skyvernDefaultAppUrl: string;
   projectsDir: string;
   stateDir: string;
   logsDir: string;
@@ -40,7 +43,10 @@ export const config: AppConfig = {
   // Phase 6: Gemini RAG configuration
   geminiRagEndpoint: process.env.GEMINI_RAG_ENDPOINT || null,
   geminiRagDataStoreId: process.env.GEMINI_RAG_DATASTORE_ID || null,
-  skyvernApiKey: process.env.SKYVERN_API_KEY || '',
+  // Phase 7: Skyvern UI testing configuration
+  skyvernApiKey: process.env.SKYVERN_API_KEY || null,
+  skyvernBaseUrl: process.env.SKYVERN_BASE_URL || 'https://api.skyvern.ai',
+  skyvernDefaultAppUrl: process.env.SKYVERN_DEFAULT_APP_URL || 'http://localhost:3000',
   projectsDir: process.env.PROJECTS_DIR || './projects',
   stateDir: process.env.STATE_DIR || './state',
   logsDir: process.env.LOGS_DIR || './state/logs',

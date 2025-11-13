@@ -73,6 +73,8 @@ export interface ProjectStateObject {
   executionHistory?: PhaseExecutionSummary[];
   lastAssessment?: PhaseAssessmentSummary;
   lastHealthCheck?: HealthCheckResult | null;
+  // Phase 7: UI test tracking
+  lastUiTestRun?: UiTestRunSummary | null;
 }
 
 export interface PlanProjectResult {
@@ -123,10 +125,47 @@ export interface CommitteeDecision {
   notes?: string;
 }
 
+/**
+ * Phase 7: UI test status types
+ */
+export type UiTestStatus = "passed" | "failed" | "skipped" | "not_configured";
+
+/**
+ * Phase 7: UI test case definition
+ */
+export interface UiTestCase {
+  id: string;
+  name: string;
+  description: string;
+  // URL where the test should start (e.g., dev server)
+  entryUrl: string;
+  // Optional tags – e.g. "smoke", "regression", "critical"
+  tags?: string[];
+}
+
+/**
+ * Phase 7: Result of a single UI test case
+ */
 export interface UiTestResult {
-  flowName: string;
-  success: boolean;
-  errors?: string[];
+  caseId: string;
+  name: string;
+  status: UiTestStatus;
+  startedAt: string;
+  finishedAt: string;
+  details?: string;         // textual summary (from Skyvern)
+  evidenceUrl?: string;     // link to report/video/screenshot (if available)
+}
+
+/**
+ * Phase 7: Summary of a UI test run
+ */
+export interface UiTestRunSummary {
+  projectId: string;
+  phaseNumber: number | null;
+  status: UiTestStatus;     // aggregate status
+  results: UiTestResult[];
+  ranAt: string;
+  notes?: string;
 }
 
 /**

@@ -1,13 +1,15 @@
-import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary } from './types';
+import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary, UiTestStatus, UiTestRunSummary } from './types';
 import { ProjectManager } from './ProjectManager';
 import { PhaseRunner, PhaseRunOutcome } from './PhaseRunner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { OrchestrationHealthMonitor, NoopHealthMonitor } from './HealthMonitor';
 import { LogRepo } from '../storage/LogRepo';
 import { NotificationService, NoopNotificationService } from '../notifications/NotificationService';
+import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
 
 /**
  * Phase 4: Result of an orchestration cycle
+ * Phase 7: Added UI test info
  */
 export interface OrchestrationResult {
   projectId: string;
@@ -18,11 +20,15 @@ export interface OrchestrationResult {
   notes?: string;
   done: boolean;      // true if no more phases
   blocked: boolean;   // true if we should stop (e.g. human_input)
+  // Phase 7: UI test results
+  uiTestStatus?: UiTestStatus | null;
+  uiTestSummary?: UiTestRunSummary | null;
 }
 
 /**
  * Phase 4: Orchestrator that runs full plan → execute → assess → health cycles
  * Phase 4.5: Added notification support for blocked cycles
+ * Phase 7: Added UI testing via UITestOrchestrator
  */
 export class Orchestrator {
   constructor(
@@ -32,6 +38,7 @@ export class Orchestrator {
     private readonly logRepo: LogRepo,
     private readonly healthMonitor: OrchestrationHealthMonitor = new NoopHealthMonitor(),
     private readonly notifications: NotificationService = new NoopNotificationService(),
+    private readonly uiTestOrchestrator: UITestOrchestrator | null = null,
   ) {}
 
   /**
@@ -171,15 +178,59 @@ export class Orchestrator {
       }
     }
 
+    // Phase 7: Run UI tests if configured
+    let uiTestSummary: UiTestRunSummary | null = null;
+    if (this.uiTestOrchestrator) {
+      console.log('🤖 Running UI tests...\n');
+
+      try {
+        uiTestSummary = await this.uiTestOrchestrator.runUiTests(pso);
+        pso.lastUiTestRun = uiTestSummary;
+
+        console.log(`   UI Tests: ${uiTestSummary.status}`);
+        if (uiTestSummary.notes) {
+          console.log(`   Notes: ${uiTestSummary.notes}`);
+        }
+        console.log('');
+
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            projectId,
+            uiTestSummary.status === 'failed' ? 'error' : 'info',
+            `UI tests: ${uiTestSummary.status}`,
+            {
+              phase: outcome.phaseNumber,
+              status: uiTestSummary.status,
+              totalTests: uiTestSummary.results.length,
+              failedTests: uiTestSummary.results.filter(r => r.status === 'failed').length,
+            }
+          )
+        );
+      } catch (err) {
+        console.warn('⚠️  UI test execution failed:', err);
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            projectId,
+            'error',
+            `UI test execution error: ${(err as Error).message}`,
+            { phase: outcome.phaseNumber }
+          )
+        );
+      }
+    }
+
     // 5) Persist PSO
     await this.manager.savePSO(pso);
 
     // 6) Decide done/blocked flags
+    // Phase 7: Also block if UI tests fail
+    const uiTestFailed = uiTestSummary?.status === 'failed';
     const blocked =
       assessment.status === 'human_input' ||
       assessment.status === 'stuck' ||
       healthResult.suggestedAction === 'require_human' ||
-      healthResult.suggestedAction === 'pause';
+      healthResult.suggestedAction === 'pause' ||
+      uiTestFailed;
 
     const allPhasesProcessed = pso.phases.every(
       p => p.status === 'done' || p.status === 'error'
@@ -197,6 +248,9 @@ export class Orchestrator {
       notes: assessment.notes,
       done,
       blocked,
+      // Phase 7: Include UI test results
+      uiTestStatus: uiTestSummary?.status ?? null,
+      uiTestSummary: uiTestSummary ?? null,
     };
 
     // Phase 4.5: Send notification when blocked

@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 6
+## Current Status: Phase 7
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -70,6 +70,19 @@ AI orchestration system combining multiple AI agents for software development au
 - Health snapshots recorded in planner pool for quality-based handoff
 - Orchestrator marks planner as unhealthy when health score < 0.60
 - Foundation for multi-model committee and intelligent model selection
+
+### Phase 7: Skyvern UI Testing & Robot User QA ✅
+- End-to-end UI testing via Skyvern browser automation
+- UITestOrchestrator coordinates test execution with graceful degradation
+- SkyvernClient with safe, env-gated configuration
+- UI test types: UiTestCase, UiTestResult, UiTestRunSummary, UiTestStatus
+- UI tests run automatically after each orchestration cycle
+- Manual UI testing via `--ui-test` CLI command
+- UI test results stored in PSO (lastUiTestRun field)
+- Failed UI tests block orchestration and trigger SMS notifications
+- OrchestrationResult extended with uiTestStatus and uiTestSummary
+- Test results tracked with passed/failed/skipped/not_configured statuses
+- Foundation for automated regression testing and continuous UI validation
 
 ## Project Structure
 
@@ -145,6 +158,13 @@ npm run orchestrate -- --project demo --cycle
 # Runs hallucination tests and displays health status
 npm run orchestrate -- --project demo --health-check
 
+# Refresh RAG memory with current project state (Phase 6)
+npm run orchestrate -- --project demo --rag-refresh
+
+# Run UI tests via Skyvern (Phase 7)
+# Executes end-to-end browser tests and displays results
+npm run orchestrate -- --project demo --ui-test
+
 # Get next phase instruction and execute (Phase 3)
 # - If CLAUDE_CODE_COMMAND_TEMPLATE is set: Plans and executes via Claude Code CLI
 # - If not set: Plan-only mode (generates instruction but doesn't execute)
@@ -154,7 +174,7 @@ npm run orchestrate -- --project demo --next-phase
 npm run orchestrate -- --project demo
 ```
 
-**Orchestration Cycle Workflow (Phase 4):**
+**Orchestration Cycle Workflow (Phase 4+):**
 
 The `--cycle` command runs a complete orchestration cycle:
 
@@ -168,10 +188,11 @@ The `--cycle` command runs a complete orchestration cycle:
    - `needs_fix`: Minor issues, may need retry
    - `stuck`: Major issues, may need different approach
    - `human_input`: Cannot proceed without human decision
-4. **Health Check**: Runs health monitor (noop in Phase 4, extensible for hallucination tests)
-5. **Status Determination**:
+4. **Health Check**: Runs planner health monitor with hallucination tests (Phase 5+)
+5. **UI Tests**: Runs end-to-end browser tests via Skyvern (Phase 7+)
+6. **Status Determination**:
    - `done`: All phases complete
-   - `blocked`: Requires human intervention
+   - `blocked`: Requires human intervention (assessment stuck, health failing, or UI tests failed)
    - Otherwise: Ready for next cycle
 
 **Plan-only Mode vs Execution Mode:**
@@ -322,6 +343,56 @@ Current behavior:
 - No automatic switching yet (planned for future phases)
 - Backup planners can be added via `addBackupPlanner()`
 
+**UI Testing with Skyvern (Phase 7):**
+
+Appula integrates Skyvern for automated end-to-end UI testing.
+
+- **Test Execution**: UITestOrchestrator coordinates browser-based tests via SkyvernClient
+- **Test Types**: Hardcoded smoke tests (homepage load, navigation) in Phase 7
+- **Future Tests**: Load from project-specific `.appula/ui-tests.json` configuration
+- **Automatic Testing**: UI tests run after each orchestration cycle (post-health check)
+- **Manual Testing**: Run tests on-demand via `--ui-test` CLI command
+- **Result Tracking**: Test results stored in PSO with detailed status and timing
+
+- **Configuration**: Set Skyvern environment variables in `.env`:
+  ```bash
+  SKYVERN_API_KEY=your_skyvern_api_key_here
+  SKYVERN_BASE_URL=https://api.skyvern.ai
+  SKYVERN_DEFAULT_APP_URL=http://localhost:3000
+  ```
+
+- **Test Statuses**:
+  - `passed`: Test completed successfully
+  - `failed`: Test failed (blocks orchestration, triggers SMS)
+  - `skipped`: Test skipped (Phase 7 simulated mode)
+  - `not_configured`: Skyvern API key not set
+
+- **Behavior**:
+  - When Skyvern configured: Tests run against configured app URL
+  - When not configured: Tests marked as `not_configured`, orchestration continues
+  - Failed tests block orchestration and send SMS notifications
+  - Test results include execution time, status, and optional evidence URLs
+
+- **Graceful Degradation**: Without Skyvern API key, UI tests are safely skipped
+
+Example usage:
+```bash
+# Run manual UI tests
+npm run orchestrate -- --project demo --ui-test
+
+# Output includes:
+# - Project name and phase number
+# - Overall test status (passed/failed/skipped/not_configured)
+# - Individual test results with details
+# - Test execution summary
+
+# UI tests run automatically during orchestration cycles
+npm run orchestrate -- --project demo --cycle
+# → After health checks, UI tests execute automatically
+# → If any test fails, cycle is blocked
+# → SMS notification sent if Twilio configured
+```
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -415,12 +486,26 @@ npm run build
 - Health-based hooks ready for future baton handoff and model switching
 - Foundation for multi-model committee and intelligent model selection
 
+### ✅ Phase 7: Skyvern UI Testing & Robot User QA
+- UITestOrchestrator for coordinating UI test execution
+- SkyvernClient with safe, env-gated configuration (requires SKYVERN_API_KEY)
+- UI test types: UiTestCase, UiTestResult, UiTestRunSummary, UiTestStatus
+- ProjectStateObject extended with lastUiTestRun field
+- Orchestrator integration: UI tests run after health checks in orchestration cycle
+- OrchestrationResult extended with uiTestStatus and uiTestSummary fields
+- Failed UI tests block orchestration (blocked=true)
+- SMS notifications include UI test failure details
+- Manual `--ui-test` command for on-demand UI testing
+- Graceful degradation: Tests marked as "not_configured" when Skyvern not set
+- Hardcoded smoke tests (homepage load, navigation) ready for future customization
+- Foundation for automated regression testing and continuous UI validation
+
 ### Next Phases
 
-- **Phase 7**: Integrate Skyvern for UI testing
 - **Phase 8**: Multi-model committee/voting logic (CommitteeEngine) with baton handoff
 - **Phase 9**: Multi-project orchestration and advanced error recovery
 - **Phase 10**: Real Gemini RAG integration with actual HTTP calls
+- **Phase 11**: Real Skyvern HTTP integration with actual browser automation
 
 ## License
 

@@ -51,6 +51,15 @@ export class TwilioNotificationService implements NotificationService {
       `Blocked: ${result.blocked}`,
     ];
 
+    // Phase 7: Include UI test status if available
+    if (result.uiTestStatus) {
+      lines.push(`UI Tests: ${result.uiTestStatus}`);
+      if (result.uiTestSummary && result.uiTestStatus === 'failed') {
+        const failedCount = result.uiTestSummary.results.filter(r => r.status === 'failed').length;
+        lines.push(`Failed: ${failedCount}/${result.uiTestSummary.results.length} test(s)`);
+      }
+    }
+
     if (result.notes) {
       lines.push(`Notes: ${result.notes.slice(0, 160)}`);
     }
