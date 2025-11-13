@@ -1,0 +1,32 @@
+{
+  "name": "appula-core",
+  "version": "0.0.1-phase1",
+  "description": "Appula - AI orchestration system with planner, coder, RAG, and E2E testing",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "dev:server": "tsx src/api/server.ts",
+    "orchestrate": "tsx src/cli/orchestrate.ts",
+    "start:server": "node dist/api/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "orchestration",
+    "llm",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
