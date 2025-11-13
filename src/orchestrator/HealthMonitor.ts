@@ -1,4 +1,37 @@
-import { PlannerHealthStatus, HealthTestResult } from './types';
+import { PlannerHealthStatus, HealthTestResult, HealthCheckResult, ProjectStateObject } from './types';
+
+/**
+ * Phase 4: Context for orchestration health checks
+ */
+export interface HealthMonitorContext {
+  pso: ProjectStateObject;
+  phaseNumber: number | null;
+  logsSnippet?: string;
+  errorsSnippet?: string;
+}
+
+/**
+ * Phase 4: Interface for orchestration health monitoring
+ */
+export interface OrchestrationHealthMonitor {
+  runHealthCheck(ctx: HealthMonitorContext): Promise<HealthCheckResult>;
+}
+
+/**
+ * Phase 4: No-op health monitor that always returns "ok"
+ * Future phases will implement real hallucination tests here
+ */
+export class NoopHealthMonitor implements OrchestrationHealthMonitor {
+  async runHealthCheck(_ctx: HealthMonitorContext): Promise<HealthCheckResult> {
+    const now = new Date().toISOString();
+    return {
+      ok: true,
+      checkedAt: now,
+      reason: 'Noop health monitor: detailed hallucination tests not implemented yet.',
+      suggestedAction: 'continue',
+    };
+  }
+}
 
 /**
  * Monitors planner health through hallucination tests and performance metrics

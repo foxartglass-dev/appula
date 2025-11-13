@@ -249,14 +249,14 @@ export class ProjectManager {
       const runner = new PhaseRunner(this.plannerPool, this.logRepo, coder);
 
       // Run next phase (will plan and optionally execute)
-      const updatedPso = await runner.runNextPhase(config, pso);
+      const outcome = await runner.runNextPhase(config, pso);
 
       // Save updated PSO
-      await this.savePSO(updatedPso);
+      await this.savePSO(outcome.pso);
 
       // Find the phase that was just run to return its instruction
-      const currentPhase = updatedPso.phases.find(
-        p => p.number === updatedPso.currentPhase
+      const currentPhase = outcome.pso.phases.find(
+        p => p.number === outcome.pso.currentPhase
       );
 
       // Return a summary (instruction would be logged by PhaseRunner)

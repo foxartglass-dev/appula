@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 3
+## Current Status: Phase 4
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -32,6 +32,15 @@ AI orchestration system combining multiple AI agents for software development au
 - Structured result capture (stdout/stderr, exit codes, timestamps)
 - Graceful degradation to plan-only mode when CLI not configured
 - Automatic timeout handling and error categorization
+
+### Phase 4: Orchestration & Assessment ✅
+- Full orchestration cycle: plan → execute → assess → health check
+- AI-powered phase result assessment (ok, needs_fix, stuck, human_input)
+- Health monitoring hooks for future hallucination tests
+- Execution history tracking with attempts and status
+- Assessment summaries stored in PSO
+- Done/blocked status determination for automated workflows
+- New CLI command: `--cycle` for single orchestration cycles
 
 ## Project Structure
 
@@ -93,11 +102,15 @@ Server runs on `http://localhost:4001`
 
 ### Run Orchestrator CLI
 
-**Phase 3 Commands:**
+**Phase 4 Commands:**
 
 ```bash
 # Initialize project plan with AI planner
 npm run orchestrate -- --project demo --init-plan
+
+# Run full orchestration cycle (Phase 4) - RECOMMENDED
+# Automatically: plans (if needed) → executes → assesses → health checks
+npm run orchestrate -- --project demo --cycle
 
 # Get next phase instruction and execute (Phase 3)
 # - If CLAUDE_CODE_COMMAND_TEMPLATE is set: Plans and executes via Claude Code CLI
@@ -108,14 +121,34 @@ npm run orchestrate -- --project demo --next-phase
 npm run orchestrate -- --project demo
 ```
 
+**Orchestration Cycle Workflow (Phase 4):**
+
+The `--cycle` command runs a complete orchestration cycle:
+
+1. **Plan Check**: Ensures project plan exists (runs `--init-plan` if needed)
+2. **Phase Execution**: Runs next pending phase
+   - Gets instruction from AI planner
+   - Executes with Claude Code CLI (if configured)
+   - Tracks attempts and execution history
+3. **Assessment**: AI reviews execution results
+   - `ok`: Phase completed successfully, proceed to next
+   - `needs_fix`: Minor issues, may need retry
+   - `stuck`: Major issues, may need different approach
+   - `human_input`: Cannot proceed without human decision
+4. **Health Check**: Runs health monitor (noop in Phase 4, extensible for hallucination tests)
+5. **Status Determination**:
+   - `done`: All phases complete
+   - `blocked`: Requires human intervention
+   - Otherwise: Ready for next cycle
+
 **Plan-only Mode vs Execution Mode:**
 
-- **Plan-only mode**: Set when `CLAUDE_CODE_COMMAND_TEMPLATE` is empty
+- **Plan-only mode**: When `CLAUDE_CODE_COMMAND_TEMPLATE` is empty
   - Generates phase instructions using OpenAI planner
   - Displays instructions but doesn't execute them
   - Safe for testing planner output
 
-- **Execution mode**: Set when `CLAUDE_CODE_COMMAND_TEMPLATE` is configured
+- **Execution mode**: When `CLAUDE_CODE_COMMAND_TEMPLATE` is configured
   - Generates phase instructions using OpenAI planner
   - Writes instruction to plan file in `state/phase-instructions/`
   - Executes via Claude Code CLI with configured template
@@ -167,12 +200,24 @@ npm run build
 - PhaseRunner integration with optional coder execution
 - Graceful fallback to plan-only mode
 
+### ✅ Phase 4: Orchestration & Assessment
+- Orchestrator service for full cycle management
+- PhaseRunner enhanced to return PhaseRunOutcome
+- AI-powered assessment via OpenAIPlanner.assessPhaseResult
+- OrchestrationHealthMonitor interface with NoopHealthMonitor
+- PSO extended with executionHistory, lastAssessment, lastHealthCheck
+- PhaseExecutionSummary and PhaseAssessmentSummary types
+- CLI `--cycle` command for single orchestration cycles
+- Done/blocked status determination
+- Health check hooks for future hallucination tests
+
 ### Next Phases
 
-- **Phase 4**: Implement full orchestration loop (planner → coder → assess → iterate)
-- **Phase 5**: Add RAG (Gemini File Search for long-term memory)
-- **Phase 6**: Integrate Skyvern for UI testing
-- **Phase 7**: Multi-project orchestration and advanced error recovery
+- **Phase 5**: Implement hallucination tests and advanced health monitoring
+- **Phase 6**: Add RAG (Gemini File Search for long-term memory)
+- **Phase 7**: Integrate Skyvern for UI testing
+- **Phase 8**: Multi-model committee/voting logic (CommitteeEngine)
+- **Phase 9**: Multi-project orchestration and advanced error recovery
 
 ## License
 

@@ -7,6 +7,9 @@ import { LogRepo } from '../storage/LogRepo';
 import { OpenAIPlanner } from '../llm/OpenAIPlanner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { ClaudeCodeCliExecutor } from '../llm/ClaudeCodeCliExecutor';
+import { PhaseRunner } from '../orchestrator/PhaseRunner';
+import { Orchestrator } from '../orchestrator/Orchestrator';
+import { NoopHealthMonitor } from '../orchestrator/HealthMonitor';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -17,6 +20,7 @@ function parseArgs(): {
   help?: boolean;
   initPlan?: boolean;
   nextPhase?: boolean;
+  cycle?: boolean;
 } {
   const args = process.argv.slice(2);
   const result: {
@@ -24,6 +28,7 @@ function parseArgs(): {
     help?: boolean;
     initPlan?: boolean;
     nextPhase?: boolean;
+    cycle?: boolean;
   } = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -38,6 +43,8 @@ function parseArgs(): {
       result.initPlan = true;
     } else if (arg === '--next-phase') {
       result.nextPhase = true;
+    } else if (arg === '--cycle') {
+      result.cycle = true;
     }
   }
 
@@ -60,6 +67,7 @@ Options:
   --project, -p <id>    Project ID to orchestrate (required)
   --init-plan           Initialize project plan with AI planner
   --next-phase          Get next phase instruction from planner
+  --cycle               Run full orchestration cycle (plan → execute → assess → health)
   --help, -h            Show this help message
 
 Examples:
@@ -69,15 +77,19 @@ Examples:
   # Get next phase instruction
   npm run orchestrate -- --project demo --next-phase
 
+  # Run a full orchestration cycle (Phase 4)
+  npm run orchestrate -- --project demo --cycle
+
   # Basic project start (Phase 1 behavior)
   npm run orchestrate -- --project demo
 
-Phase 2 Features:
-  --init-plan: Uses OpenAI GPT to analyze your project and
-               break it down into logical development phases.
-
-  --next-phase: Gets detailed instruction for the next phase
-                from the AI planner (coder execution still stubbed).
+Phase 4 Features:
+  --cycle: Runs a complete orchestration cycle:
+           1. Ensures plan exists (runs --init-plan if needed)
+           2. Runs next phase (plan + execute with coder if configured)
+           3. Assesses phase result with AI
+           4. Runs health checks
+           5. Returns summary (done/blocked status)
 
 Configuration:
   Projects dir: ${config.projectsDir}
@@ -109,7 +121,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const phaseVersion = args.initPlan || args.nextPhase ? 'Phase 2' : 'Phase 1';
+  const phaseVersion = args.cycle
+    ? 'Phase 4'
+    : args.initPlan || args.nextPhase
+    ? 'Phase 2'
+    : 'Phase 1';
 
   console.log('╔═══════════════════════════════════════════╗');
   console.log(`║        Appula Orchestrator (${phaseVersion})      ║`);
@@ -229,6 +245,83 @@ async function main(): Promise<void> {
       } else {
         console.log('Note: To enable code execution, set CLAUDE_CODE_COMMAND_TEMPLATE');
         console.log('in your .env file. See .env.example for details.');
+      }
+      console.log('');
+      return;
+    }
+
+    // Handle cycle (Phase 4)
+    if (args.cycle) {
+      console.log('🎯 Mode: Run Orchestration Cycle\n');
+
+      // Validate OpenAI config
+      validateConfig(true);
+
+      // Initialize planner and pool
+      const planner = new OpenAIPlanner(
+        config.openaiApiKey,
+        config.openaiPlannerModel,
+        config.openaiBaseUrl
+      );
+      const pool = new PlannerModelPool(planner);
+
+      // Load project to get repoPath for executor
+      const project = await projectRepo.load(args.projectId);
+
+      // Phase 4: Create coder executor (optional based on config)
+      const coder = config.claudeCodeCommandTemplate
+        ? new ClaudeCodeCliExecutor(project.repoPath)
+        : null;
+
+      if (coder) {
+        console.log('🤖 Claude Code CLI executor configured');
+      } else {
+        console.log('📝 Plan-only mode (CLAUDE_CODE_COMMAND_TEMPLATE not set)');
+      }
+      console.log('');
+
+      // Create project manager with pool
+      const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
+
+      // Create phase runner with optional coder
+      const phaseRunner = new PhaseRunner(pool, logRepo, coder);
+
+      // Create health monitor
+      const healthMonitor = new NoopHealthMonitor();
+
+      // Create orchestrator
+      const orchestrator = new Orchestrator(
+        projectManager,
+        phaseRunner,
+        pool,
+        logRepo,
+        healthMonitor
+      );
+
+      // Run single orchestration cycle
+      const result = await orchestrator.runSingleCycle(args.projectId);
+
+      console.log('\n═══════════════════════════════════════════');
+      console.log('          Orchestration Cycle Result');
+      console.log('═══════════════════════════════════════════\n');
+      console.log(`Project:           ${result.projectId}`);
+      console.log(`Phase:             ${result.phaseNumber ?? 'none'}`);
+      console.log(`Planner Status:    ${result.plannerStatus ?? 'n/a'}`);
+      console.log(`Execution Status:  ${result.executionStatus ?? 'n/a'}`);
+      console.log(`Health OK:         ${result.health?.ok ?? true}`);
+      console.log(`Done:              ${result.done}`);
+      console.log(`Blocked:           ${result.blocked}`);
+      if (result.notes) {
+        console.log(`\nNotes: ${result.notes}`);
+      }
+      console.log('\n═══════════════════════════════════════════\n');
+
+      if (result.done) {
+        console.log('✅ All phases complete!');
+      } else if (result.blocked) {
+        console.log('⚠️  Orchestration blocked. Human input or intervention required.');
+      } else {
+        console.log('✅ Cycle complete. Run again to continue to next phase.');
       }
       console.log('');
       return;

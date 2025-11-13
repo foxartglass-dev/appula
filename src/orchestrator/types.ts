@@ -25,6 +25,7 @@ export interface Phase {
   name: string;
   status: PhaseStatus;
   description?: string;
+  attempts?: number;
   result?: {
     status: 'success' | 'error';
     logs?: string;
@@ -38,6 +39,28 @@ export interface HealthInfo {
   notes?: string;
 }
 
+/**
+ * Phase 4: Track execution history for each phase
+ */
+export interface PhaseExecutionSummary {
+  phaseNumber: number;
+  status: PhaseStatus;
+  attempts: number;
+  lastResultStatus?: 'success' | 'failed' | 'timeout' | 'cli_error';
+  lastErrorMessage?: string;
+  lastRunAt?: string;
+}
+
+/**
+ * Phase 4: Track assessment results
+ */
+export interface PhaseAssessmentSummary {
+  phaseNumber: number;
+  status: AssessmentStatus;
+  notes?: string;
+  lastAssessedAt: string;
+}
+
 export interface ProjectStateObject {
   projectId: string;
   summary: string;
@@ -46,6 +69,10 @@ export interface ProjectStateObject {
   lastUpdated: string;
   health: HealthInfo;
   metadata: Record<string, unknown>;
+  // Phase 4: Orchestration tracking
+  executionHistory?: PhaseExecutionSummary[];
+  lastAssessment?: PhaseAssessmentSummary;
+  lastHealthCheck?: HealthCheckResult | null;
 }
 
 export interface PlanProjectResult {
@@ -102,6 +129,19 @@ export interface UiTestResult {
   errors?: string[];
 }
 
+/**
+ * Phase 4: Health check result for orchestration cycles
+ */
+export interface HealthCheckResult {
+  ok: boolean;
+  reason?: string;
+  suggestedAction?: 'continue' | 'pause' | 'switch_model' | 'require_human';
+  checkedAt: string;
+}
+
+/**
+ * Legacy: Planner-specific health test result (for HealthMonitor)
+ */
 export interface HealthTestResult {
   plannerId: string;
   passed: boolean;
