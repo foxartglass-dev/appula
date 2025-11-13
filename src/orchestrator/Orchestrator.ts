@@ -159,6 +159,18 @@ export class Orchestrator {
       )
     );
 
+    // Phase 6: Record health snapshot in planner pool for future baton handoff
+    if (healthResult.plannerHealth) {
+      this.plannerPool.recordHealthSnapshot(healthResult.plannerHealth);
+
+      // If health is failing, mark planner as unhealthy
+      if (healthResult.plannerHealth.status === 'failing') {
+        this.plannerPool.markPlannerUnhealthy(
+          `Planner failing with score ${healthResult.plannerHealth.overallScore.toFixed(2)}`,
+        );
+      }
+    }
+
     // 5) Persist PSO
     await this.manager.savePSO(pso);
 

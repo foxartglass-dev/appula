@@ -13,6 +13,9 @@ export interface AppConfig {
   claudeCodeTimeoutMs: number;
   claudeCodeWorkingDir: string | null;
   geminiApiKey: string;
+  // Phase 6: Gemini RAG configuration
+  geminiRagEndpoint: string | null;
+  geminiRagDataStoreId: string | null;
   skyvernApiKey: string;
   projectsDir: string;
   stateDir: string;
@@ -34,6 +37,9 @@ export const config: AppConfig = {
   claudeCodeTimeoutMs: parseInt(process.env.CLAUDE_CODE_TIMEOUT_MS || String(30 * 60 * 1000), 10),
   claudeCodeWorkingDir: process.env.CLAUDE_CODE_WORKING_DIR || null,
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  // Phase 6: Gemini RAG configuration
+  geminiRagEndpoint: process.env.GEMINI_RAG_ENDPOINT || null,
+  geminiRagDataStoreId: process.env.GEMINI_RAG_DATASTORE_ID || null,
   skyvernApiKey: process.env.SKYVERN_API_KEY || '',
   projectsDir: process.env.PROJECTS_DIR || './projects',
   stateDir: process.env.STATE_DIR || './state',

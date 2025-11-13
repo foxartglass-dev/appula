@@ -1,13 +1,19 @@
 import { PlannerLLM } from './PlannerLLM';
+import { PlannerHealthSnapshot } from '../orchestrator/types';
 
 /**
  * Pool of planner instances with backup/failover support
  * Phase 2: Implements constructor with primary planner and getActivePlanner()
+ * Phase 6: Added baton handoff hooks for health-based model switching
  */
 export class PlannerModelPool {
   private primaryPlanner: PlannerLLM;
   private backupPlanners: PlannerLLM[] = [];
   private unhealthyReason: string | null = null;
+
+  // Phase 6: Health tracking for baton handoff
+  private lastHealthSnapshot: PlannerHealthSnapshot | null = null;
+  private lastSwitchReason: string | null = null;
 
   constructor(primary: PlannerLLM) {
     this.primaryPlanner = primary;
@@ -90,5 +96,29 @@ export class PlannerModelPool {
     throw new Error(
       `All planners failed. Last error: ${lastError?.message || 'Unknown error'}`
     );
+  }
+
+  /**
+   * Phase 6: Record health snapshot from health monitor
+   * This creates a hook for future model handoff based on health scores
+   */
+  recordHealthSnapshot(snapshot: PlannerHealthSnapshot): void {
+    this.lastHealthSnapshot = snapshot;
+  }
+
+  /**
+   * Phase 6: Get diagnostics for debugging and monitoring
+   * Returns health snapshot, switch reason, and backup count
+   */
+  getDiagnostics(): {
+    lastHealthSnapshot: PlannerHealthSnapshot | null;
+    lastSwitchReason: string | null;
+    backupCount: number;
+  } {
+    return {
+      lastHealthSnapshot: this.lastHealthSnapshot,
+      lastSwitchReason: this.lastSwitchReason,
+      backupCount: this.backupPlanners.length,
+    };
   }
 }

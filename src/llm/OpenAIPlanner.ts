@@ -8,21 +8,30 @@ import {
   AssessPhaseParams,
   AssessPhaseResult,
 } from '../orchestrator/types';
+import { MemoryManager } from '../rag/MemoryManager';
 
 /**
  * OpenAI implementation of PlannerLLM
  * Phase 2: Real implementation with GPT API calls
+ * Phase 6: RAG-aware with optional MemoryManager
  */
 export class OpenAIPlanner implements PlannerLLM {
   private client: OpenAI;
   private model: string;
+  private memory?: MemoryManager;
 
-  constructor(apiKey: string, model: string = 'gpt-4', baseURL?: string) {
+  constructor(
+    apiKey: string,
+    model: string = 'gpt-4',
+    baseURL?: string,
+    memory?: MemoryManager
+  ) {
     this.client = new OpenAI({
       apiKey,
       baseURL,
     });
     this.model = model;
+    this.memory = memory;
   }
 
   /**
@@ -93,12 +102,29 @@ Return ONLY the JSON, no other text.`;
 
   /**
    * Plan the next phase based on current project state
+   * Phase 6: RAG-aware - retrieves historical context if memory is available
    */
   async planNextPhase(pso: ProjectStateObject): Promise<PlanNextPhaseResult> {
     const currentPhase = pso.phases.find(p => p.number === pso.currentPhase);
 
     if (!currentPhase) {
       throw new Error('No current phase found in PSO');
+    }
+
+    // Phase 6: Retrieve historical context from memory if available
+    let memoryContext: string | null = null;
+    if (this.memory) {
+      try {
+        const memoryResults = await this.memory.searchProjectContext(
+          pso.projectId,
+          `phase ${currentPhase.number} ${currentPhase.name} planning execution history`,
+          5
+        );
+        memoryContext = this.memory.buildMemoryTextBlock(memoryResults);
+      } catch (err) {
+        console.warn('[OpenAIPlanner] Failed to retrieve memory context:', err);
+        // Continue without memory - not critical
+      }
     }
 
     const prompt = `You are an expert software project planner. Generate a detailed instruction for the next phase of development.
@@ -131,18 +157,29 @@ Return your response as a JSON object:
 Return ONLY the JSON, no other text.`;
 
     try {
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content: 'You are an expert software project planner. Always respond with valid JSON only.',
+        },
+      ];
+
+      // Phase 6: Inject memory context if available
+      if (memoryContext) {
+        messages.push({
+          role: 'system',
+          content: memoryContext,
+        });
+      }
+
+      messages.push({
+        role: 'user',
+        content: prompt,
+      });
+
       const response = await this.client.chat.completions.create({
         model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert software project planner. Always respond with valid JSON only.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
+        messages,
         temperature: 0.7,
         response_format: { type: 'json_object' },
       });

@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 5
+## Current Status: Phase 6
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -57,6 +57,19 @@ AI orchestration system combining multiple AI agents for software development au
 - Manual health check via `--health-check` CLI command
 - Quality scoring (ok/degraded/failing) with suggested actions (continue/pause/require_human)
 - Foundation for future model handoff and multi-model committee logic
+
+### Phase 6: RAG Memory & Baton Handoff Hooks ✅
+- Long-term project memory via RAG (Retrieval-Augmented Generation)
+- MemoryManager indexes PSO snapshots, logs, and project config into RAG
+- OpenAIPlanner enhanced with RAG-aware context injection
+- Historical context automatically retrieved and injected into planning prompts
+- GeminiFileSearchClient integration (configurable via env, graceful fallback)
+- NullRagClient for environments without RAG configuration
+- Manual RAG refresh via `--rag-refresh` CLI command
+- Baton handoff hooks in PlannerModelPool for future model switching
+- Health snapshots recorded in planner pool for quality-based handoff
+- Orchestrator marks planner as unhealthy when health score < 0.60
+- Foundation for multi-model committee and intelligent model selection
 
 ## Project Structure
 
@@ -253,6 +266,62 @@ npm run orchestrate -- --project demo --cycle
 # → SMS notification sent if Twilio configured
 ```
 
+**RAG Memory System (Phase 6):**
+
+Appula features a Retrieval-Augmented Generation (RAG) system for long-term project memory.
+
+- **Memory Indexing**: Automatically indexes project state, logs, and configuration into RAG
+- **Context Retrieval**: Planner retrieves relevant historical context when planning phases
+- **Gemini Integration**: Optional Gemini File Search backend for vector storage
+- **Graceful Fallback**: NullRagClient used when Gemini not configured
+- **Never Forgets**: RAG ensures planner has access to entire project history
+
+- **Configuration**: Set Gemini environment variables in `.env`:
+  ```bash
+  GEMINI_API_KEY=your_gemini_api_key_here
+  GEMINI_RAG_ENDPOINT=https://your-gemini-rag-endpoint.com
+  GEMINI_RAG_DATASTORE_ID=your_datastore_id_here
+  ```
+
+- **Behavior**:
+  - When RAG is configured, planner automatically retrieves historical context
+  - Memory snippets injected into planning prompts as system messages
+  - `--rag-refresh` manually indexes current project snapshot
+  - Orchestration cycles can auto-index after successful phases
+
+Example usage:
+```bash
+# Manually refresh RAG memory with current project state
+npm run orchestrate -- --project demo --rag-refresh
+
+# Output includes:
+# - Project name and status
+# - Number of documents indexed (PSO, logs, config)
+# - RAG type (Gemini or Null)
+
+# Planner uses RAG automatically during planning
+npm run orchestrate -- --project demo --cycle
+# → Planner retrieves top-5 relevant historical snippets
+# → Context injected into planning prompts
+# → "Never forgets" older project decisions and patterns
+```
+
+**Baton Handoff Hooks (Phase 6):**
+
+Foundation for future multi-model coordination and intelligent model switching.
+
+- **Health Recording**: PlannerModelPool records health snapshots after each health check
+- **Automatic Marking**: Planner marked as unhealthy when health score < 0.60 (failing status)
+- **Diagnostics API**: `getDiagnostics()` provides health history and backup planner count
+- **Future Handoff**: Hooks ready for automatic model switching based on health scores
+- **Multi-Model Prep**: Foundation for Phase 8 committee voting and model selection
+
+Current behavior:
+- Health snapshots recorded in planner pool
+- Unhealthy planners logged with warnings
+- No automatic switching yet (planned for future phases)
+- Backup planners can be added via `addBackupPlanner()`
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -332,12 +401,26 @@ npm run build
 - Suggested actions: continue, pause, switch_model, require_human
 - Foundation for future model handoff and multi-model committee logic
 
+### ✅ Phase 6: RAG Memory & Baton Handoff Hooks
+- RagClient interface with RagDocument, RagSearchParams, RagSearchResult types
+- NullRagClient for graceful fallback when RAG not configured
+- GeminiFileSearchClient with proper env configuration and error handling
+- MemoryManager for project-level RAG (indexes PSO, logs, config)
+- OpenAIPlanner enhanced with RAG-aware context retrieval
+- Memory snippets automatically injected into planning prompts
+- CLI wiring: RAG client initialization with Gemini or Null fallback
+- Manual `--rag-refresh` command to index current project snapshot
+- PlannerModelPool extended with recordHealthSnapshot() and getDiagnostics()
+- Orchestrator records health snapshots and marks planner unhealthy when failing
+- Health-based hooks ready for future baton handoff and model switching
+- Foundation for multi-model committee and intelligent model selection
+
 ### Next Phases
 
-- **Phase 6**: Add RAG (Gemini File Search for long-term memory) + baton handoff hooks
 - **Phase 7**: Integrate Skyvern for UI testing
-- **Phase 8**: Multi-model committee/voting logic (CommitteeEngine)
+- **Phase 8**: Multi-model committee/voting logic (CommitteeEngine) with baton handoff
 - **Phase 9**: Multi-project orchestration and advanced error recovery
+- **Phase 10**: Real Gemini RAG integration with actual HTTP calls
 
 ## License
 

@@ -20,6 +20,9 @@ import {
   TwilioNotificationService,
   NoopNotificationService,
 } from '../notifications/NotificationService';
+import { RagClient, NullRagClient } from '../rag/RagClient';
+import { GeminiFileSearchClient } from '../rag/GeminiFileSearchClient';
+import { MemoryManager } from '../rag/MemoryManager';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -32,6 +35,7 @@ function parseArgs(): {
   nextPhase?: boolean;
   cycle?: boolean;
   healthCheck?: boolean;
+  ragRefresh?: boolean;
 } {
   const args = process.argv.slice(2);
   const result: {
@@ -41,6 +45,7 @@ function parseArgs(): {
     nextPhase?: boolean;
     cycle?: boolean;
     healthCheck?: boolean;
+    ragRefresh?: boolean;
   } = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -59,6 +64,8 @@ function parseArgs(): {
       result.cycle = true;
     } else if (arg === '--health-check') {
       result.healthCheck = true;
+    } else if (arg === '--rag-refresh') {
+      result.ragRefresh = true;
     }
   }
 
@@ -83,6 +90,7 @@ Options:
   --next-phase          Get next phase instruction from planner
   --cycle               Run full orchestration cycle (plan → execute → assess → health)
   --health-check        Run planner health check and display results
+  --rag-refresh         Index current project snapshot into RAG memory
   --help, -h            Show this help message
 
 Examples:
@@ -97,6 +105,9 @@ Examples:
 
   # Run planner health check (Phase 5)
   npm run orchestrate -- --project demo --health-check
+
+  # Refresh RAG memory with current project state (Phase 6)
+  npm run orchestrate -- --project demo --rag-refresh
 
   # Basic project start (Phase 1 behavior)
   npm run orchestrate -- --project demo
@@ -143,6 +154,8 @@ async function main(): Promise<void> {
     ? 'Phase 4'
     : args.healthCheck
     ? 'Phase 5'
+    : args.ragRefresh
+    ? 'Phase 6'
     : args.initPlan || args.nextPhase
     ? 'Phase 2'
     : 'Phase 1';
@@ -157,6 +170,26 @@ async function main(): Promise<void> {
     const projectRepo = new ProjectRepo();
     const psoRepo = new PsoRepo();
     const logRepo = new LogRepo();
+
+    // Phase 6: Initialize RAG client
+    let ragClient: RagClient;
+    try {
+      if (config.geminiApiKey && config.geminiRagEndpoint && config.geminiRagDataStoreId) {
+        ragClient = new GeminiFileSearchClient();
+        console.log('🧠 RAG: Gemini File Search enabled');
+      } else {
+        ragClient = new NullRagClient();
+        console.log('🧠 RAG: Disabled (Gemini config not set)');
+      }
+    } catch (err) {
+      console.warn('⚠️  Failed to initialize Gemini RAG client. Falling back to NullRagClient.');
+      console.warn('   Error:', (err as Error).message);
+      ragClient = new NullRagClient();
+    }
+
+    // Phase 6: Initialize MemoryManager
+    const memoryManager = new MemoryManager(ragClient, psoRepo, logRepo);
+    console.log('');
 
     console.log(`📁 Project ID: ${args.projectId}`);
     console.log('');
@@ -200,11 +233,12 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Initialize planner and pool
+      // Phase 6: Initialize planner with memory
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
         config.openaiPlannerModel,
-        config.openaiBaseUrl
+        config.openaiBaseUrl,
+        memoryManager
       );
       const pool = new PlannerModelPool(planner);
 
@@ -229,11 +263,12 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Initialize planner and pool
+      // Phase 6: Initialize planner with memory
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
         config.openaiPlannerModel,
-        config.openaiBaseUrl
+        config.openaiBaseUrl,
+        memoryManager
       );
       const pool = new PlannerModelPool(planner);
 
@@ -277,11 +312,12 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Initialize planner and pool
+      // Phase 6: Initialize planner with memory
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
         config.openaiPlannerModel,
-        config.openaiBaseUrl
+        config.openaiBaseUrl,
+        memoryManager
       );
       const pool = new PlannerModelPool(planner);
 
@@ -461,6 +497,40 @@ async function main(): Promise<void> {
       } else {
         console.log('⚠️  Planner health check failed. Review results above.');
       }
+      console.log('');
+      return;
+    }
+
+    // Handle rag-refresh (Phase 6)
+    if (args.ragRefresh) {
+      console.log('🎯 Mode: RAG Memory Refresh\n');
+
+      // Load project config and PSO
+      const project = await projectRepo.load(args.projectId);
+      const pso = await psoRepo.load(args.projectId);
+
+      if (!pso) {
+        console.log(`❌ Project state not found for "${args.projectId}"`);
+        console.log('   Please run --init-plan first to create project state.\n');
+        process.exit(1);
+      }
+
+      // Index current snapshot
+      console.log('Indexing current project snapshot into RAG...\n');
+      await memoryManager.indexProjectSnapshot(project, pso);
+
+      // Display success
+      console.log('╔═══════════════════════════════════════════╗');
+      console.log('║        Appula RAG Refresh (Phase 6)       ║');
+      console.log('╚═══════════════════════════════════════════╝\n');
+      console.log(`Project:   ${project.name}`);
+      console.log(`Status:    Indexed current PSO and recent logs into RAG`);
+      console.log(`RAG Type:  ${config.geminiRagEndpoint ? 'Gemini File Search' : 'Null (disabled)'}`);
+      console.log('');
+      console.log('═══════════════════════════════════════════\n');
+      console.log('✅ RAG refresh complete!');
+      console.log('');
+      console.log('The planner will now have access to this historical context.');
       console.log('');
       return;
     }
