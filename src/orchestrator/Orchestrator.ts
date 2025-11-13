@@ -1,4 +1,4 @@
-import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary, UiTestStatus, UiTestRunSummary } from './types';
+import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary, UiTestStatus, UiTestRunSummary, ActivePlannerInfo } from './types';
 import { ProjectManager } from './ProjectManager';
 import { PhaseRunner, PhaseRunOutcome } from './PhaseRunner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
@@ -10,6 +10,7 @@ import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
 /**
  * Phase 4: Result of an orchestration cycle
  * Phase 7: Added UI test info
+ * Phase 9: Added active planner info for baton handoff
  */
 export interface OrchestrationResult {
   projectId: string;
@@ -23,6 +24,8 @@ export interface OrchestrationResult {
   // Phase 7: UI test results
   uiTestStatus?: UiTestStatus | null;
   uiTestSummary?: UiTestRunSummary | null;
+  // Phase 9: Active planner info
+  activePlanner?: ActivePlannerInfo;
 }
 
 /**
@@ -166,17 +169,30 @@ export class Orchestrator {
       )
     );
 
-    // Phase 6: Record health snapshot in planner pool for future baton handoff
+    // Phase 6/9: Record health snapshot in planner pool for baton handoff
     if (healthResult.plannerHealth) {
       this.plannerPool.recordHealthSnapshot(healthResult.plannerHealth);
 
-      // If health is failing, mark planner as unhealthy
-      if (healthResult.plannerHealth.status === 'failing') {
+      const status = healthResult.plannerHealth.status;
+
+      // Phase 9: Health-based switching
+      if (status === 'failing') {
         this.plannerPool.markPlannerUnhealthy(
           `Planner failing with score ${healthResult.plannerHealth.overallScore.toFixed(2)}`,
         );
+      } else if (status === 'degraded') {
+        // Phase 9: Warn on degraded health, but don't switch yet
+        console.warn(
+          `[Orchestrator] Planner health degraded (score=${healthResult.plannerHealth.overallScore.toFixed(
+            2
+          )}); monitoring.`
+        );
       }
     }
+
+    // Phase 9: Update active planner info in PSO after potential health-based switch
+    const activePlannerInfo = this.plannerPool.getActivePlannerInfo();
+    pso.activePlanner = activePlannerInfo;
 
     // Phase 7: Run UI tests if configured
     let uiTestSummary: UiTestRunSummary | null = null;
@@ -251,6 +267,8 @@ export class Orchestrator {
       // Phase 7: Include UI test results
       uiTestStatus: uiTestSummary?.status ?? null,
       uiTestSummary: uiTestSummary ?? null,
+      // Phase 9: Include active planner info
+      activePlanner: activePlannerInfo,
     };
 
     // Phase 4.5: Send notification when blocked

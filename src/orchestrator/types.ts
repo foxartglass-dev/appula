@@ -61,6 +61,18 @@ export interface PhaseAssessmentSummary {
   lastAssessedAt: string;
 }
 
+/**
+ * Phase 9: Active planner identity and health for baton handoff
+ */
+export interface ActivePlannerInfo {
+  plannerId: string;       // e.g. "primary", "backup-1"
+  modelName: string;       // e.g. "gpt-4"
+  lastHealthStatus?: "ok" | "degraded" | "failing";
+  lastHealthScore?: number;
+  lastSwitchReason?: string;
+  lastUpdatedAt: string;
+}
+
 export interface ProjectStateObject {
   projectId: string;
   summary: string;
@@ -77,6 +89,8 @@ export interface ProjectStateObject {
   lastUiTestRun?: UiTestRunSummary | null;
   // Phase 8: Committee decision tracking
   lastCommitteeDecision?: CommitteePhaseDecision | null;
+  // Phase 9: Active planner tracking for baton handoff
+  activePlanner?: ActivePlannerInfo | null;
 }
 
 export interface PlanProjectResult {

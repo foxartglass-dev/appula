@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 8
+## Current Status: Phase 9
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -97,6 +97,18 @@ AI orchestration system combining multiple AI agents for software development au
 - Graceful degradation: Falls back to single planner if committee not configured
 - Committee decisions include winner metadata, tie-breaking info, and all proposals
 - Foundation for advanced multi-model voting, synthesis, and consensus algorithms
+
+### Phase 9: Health-Based Baton Handoff & Planner Auto-Switching ✅
+- Automatic planner model switching when health degrades (failing status)
+- ActivePlannerInfo tracking in PSO (planner ID, model, health status, switch reason)
+- PlannerModelPool tracks each planner's health independently
+- Health thresholds: ok (≥0.85), degraded (≥0.60), failing (<0.60)
+- Configure primary + backup models via OPENAI_PRIMARY_PLANNER_MODEL and OPENAI_BACKUP_PLANNER_MODELS
+- Automatic failover to first healthy backup when current planner fails
+- CLI displays active planner info in cycle results
+- Full backward compatibility with existing single-planner setups
+- Graceful degradation when no backups configured
+- Foundation for intelligent multi-model orchestration and quality-based planner selection
 
 ## Project Structure
 
@@ -470,6 +482,81 @@ npm run orchestrate -- --project demo --cycle
 # - decidedAt: [ISO timestamp]
 ```
 
+**Health-Based Baton Handoff & Planner Auto-Switching (Phase 9):**
+
+Appula features automatic planner model switching when health degrades, ensuring robust orchestration.
+
+- **Baton Handoff**: Automatic switching from degraded/failing planner to healthy backup
+- **Health Tracking**: Each planner's health score monitored independently
+- **Identity Management**: Active planner info tracked in PSO with switch reasons
+- **Multi-Planner Pool**: Configure primary + backup models for automatic failover
+- **Visibility**: CLI displays active planner ID, model, health status, and score
+
+- **Configuration**: Set primary and backup planner models in `.env`:
+  ```bash
+  # Phase 9: Planner baton handoff (optional)
+  OPENAI_PRIMARY_PLANNER_MODEL=gpt-4
+  OPENAI_BACKUP_PLANNER_MODELS=gpt-4o,o1-mini
+  ```
+
+- **Health Thresholds**:
+  - **ok** (score ≥ 0.85): Continue using current planner
+  - **degraded** (0.60 ≤ score < 0.85): Log warning, monitor closely
+  - **failing** (score < 0.60): Automatically switch to next healthy backup
+
+- **Behavior**:
+  - Planner pool initialized with primary and backup models
+  - Health checks run after each orchestration cycle (Phase 5)
+  - When planner marked as failing: Pool switches to first healthy backup
+  - Switch reason logged and stored in PSO
+  - If no healthy backups available: Warning logged, continues with current planner
+  - Active planner info displayed in cycle results (planner ID, model, health score)
+
+- **PlannerModelPool Changes**:
+  - Constructor now requires `(planner, modelName)` for identity tracking
+  - `addBackupPlanner(planner, id, modelName)` for backup registration
+  - `markPlannerUnhealthy(reason)` triggers automatic switching
+  - `getActivePlannerInfo()` returns current planner state
+  - Internal `PlannerEntry` type tracks health snapshots per planner
+
+- **Backward Compatibility**:
+  - Defaults to `OPENAI_PLANNER_MODEL` if `OPENAI_PRIMARY_PLANNER_MODEL` not set
+  - Empty backup list = no automatic switching (single planner mode)
+  - `addBackupPlanner()` accepts optional `id`/`modelName` parameters
+  - All existing code continues to work without changes
+
+Example usage:
+```bash
+# Configure multiple planners in .env
+OPENAI_PRIMARY_PLANNER_MODEL=gpt-4
+OPENAI_BACKUP_PLANNER_MODELS=gpt-4o,o1-mini
+
+# Run orchestration with baton handoff enabled
+npm run orchestrate -- --project demo --cycle
+
+# Output includes:
+# 🔄 Planner baton handoff: 2 backup(s) configured [gpt-4o, o1-mini]
+# [... orchestration cycle runs ...]
+#
+# --- Active Planner (Phase 9) ---
+# Planner ID:        primary
+# Model:             gpt-4
+# Health Status:     ok
+# Health Score:      0.93
+
+# If planner health degrades to failing (< 0.60):
+# ⚠️  Planner "primary" (gpt-4) marked unhealthy: Planner failing with score 0.52
+# 🔄 Switching planner: primary (gpt-4) → backup-1 (gpt-4o)
+#
+# Next cycle shows:
+# --- Active Planner (Phase 9) ---
+# Planner ID:        backup-1
+# Model:             gpt-4o
+# Health Status:     ok
+# Health Score:      0.89
+# Last Switch:       Planner failing with score 0.52
+```
+
 ## API Endpoints
 
 - `GET /health` - Health check
@@ -593,9 +680,25 @@ npm run build
 - Integration with --cycle command for full orchestration with committee planning
 - Foundation for advanced voting algorithms, synthesis, and consensus mechanisms
 
+### ✅ Phase 9: Health-Based Baton Handoff & Planner Auto-Switching
+- ActivePlannerInfo type for tracking planner identity, health, and switch reasons
+- PlannerModelPool refactored with internal PlannerEntry type for per-planner health tracking
+- PlannerModelPool constructor signature changed to require (planner, modelName)
+- addBackupPlanner() enhanced with id and modelName parameters (backward compatible)
+- markPlannerUnhealthy() triggers automatic switching to first healthy backup
+- getActivePlannerInfo() returns current planner state for visibility
+- Orchestrator records activePlanner in PSO after each health check
+- Health-based switching: ok (≥0.85) → continue, degraded (≥0.60) → warn, failing (<0.60) → switch
+- CLI env vars: OPENAI_PRIMARY_PLANNER_MODEL, OPENAI_BACKUP_PLANNER_MODELS
+- CLI startup displays planner baton handoff status (ON with backups, or OFF)
+- CLI cycle results display active planner info (ID, model, health status, score, switch reason)
+- Graceful degradation: Falls back to OPENAI_PLANNER_MODEL if primary not set
+- Empty backup list = single planner mode (no automatic switching)
+- Full backward compatibility: All existing code works without changes
+- Foundation for intelligent multi-model orchestration and quality-based planner selection
+
 ### Next Phases
 
-- **Phase 9**: Health-based baton handoff with automatic model switching
 - **Phase 10**: Multi-project orchestration and advanced error recovery
 - **Phase 11**: Real Gemini RAG integration with actual HTTP calls
 - **Phase 12**: Real Skyvern HTTP integration with actual browser automation

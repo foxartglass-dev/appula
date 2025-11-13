@@ -23,6 +23,9 @@ export interface AppConfig {
   // Phase 8: Committee planner configuration
   committeeEnabled: boolean;
   committeePlannerModels: string[];
+  // Phase 9: Baton handoff configuration
+  openaiPrimaryPlannerModel: string;
+  openaiBackupPlannerModels: string[];
   projectsDir: string;
   stateDir: string;
   logsDir: string;
@@ -54,6 +57,11 @@ export const config: AppConfig = {
   committeeEnabled: process.env.COMMITTEE_ENABLED === 'true',
   committeePlannerModels: process.env.COMMITTEE_PLANNER_MODELS
     ? process.env.COMMITTEE_PLANNER_MODELS.split(',').map(m => m.trim()).filter(m => m.length > 0)
+    : [],
+  // Phase 9: Baton handoff configuration
+  openaiPrimaryPlannerModel: process.env.OPENAI_PRIMARY_PLANNER_MODEL || process.env.OPENAI_PLANNER_MODEL || 'gpt-4',
+  openaiBackupPlannerModels: process.env.OPENAI_BACKUP_PLANNER_MODELS
+    ? process.env.OPENAI_BACKUP_PLANNER_MODELS.split(',').map(m => m.trim()).filter(m => m.length > 0)
     : [],
   projectsDir: process.env.PROJECTS_DIR || './projects',
   stateDir: process.env.STATE_DIR || './state',

@@ -246,14 +246,30 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Phase 6: Initialize planner with memory
+      // Phase 6/9: Initialize planner with memory
+      const primaryModel = config.openaiPrimaryPlannerModel;
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
-        config.openaiPlannerModel,
+        primaryModel,
         config.openaiBaseUrl,
         memoryManager
       );
-      const pool = new PlannerModelPool(planner);
+      const pool = new PlannerModelPool(planner, primaryModel);
+
+      // Phase 9: Add backup planners if configured
+      if (config.openaiBackupPlannerModels.length > 0) {
+        for (let i = 0; i < config.openaiBackupPlannerModels.length; i++) {
+          const backupModel = config.openaiBackupPlannerModels[i];
+          const backupPlanner = new OpenAIPlanner(
+            config.openaiApiKey,
+            backupModel,
+            config.openaiBaseUrl,
+            memoryManager
+          );
+          pool.addBackupPlanner(backupPlanner, `backup-${i + 1}`, backupModel);
+        }
+        console.log(`🔄 Planner baton handoff: ${config.openaiBackupPlannerModels.length} backup(s) configured [${config.openaiBackupPlannerModels.join(', ')}]\n`);
+      }
 
       // Create project manager with pool
       const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
@@ -276,14 +292,30 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Phase 6: Initialize planner with memory
+      // Phase 6/9: Initialize planner with memory
+      const primaryModel = config.openaiPrimaryPlannerModel;
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
-        config.openaiPlannerModel,
+        primaryModel,
         config.openaiBaseUrl,
         memoryManager
       );
-      const pool = new PlannerModelPool(planner);
+      const pool = new PlannerModelPool(planner, primaryModel);
+
+      // Phase 9: Add backup planners if configured
+      if (config.openaiBackupPlannerModels.length > 0) {
+        for (let i = 0; i < config.openaiBackupPlannerModels.length; i++) {
+          const backupModel = config.openaiBackupPlannerModels[i];
+          const backupPlanner = new OpenAIPlanner(
+            config.openaiApiKey,
+            backupModel,
+            config.openaiBaseUrl,
+            memoryManager
+          );
+          pool.addBackupPlanner(backupPlanner, `backup-${i + 1}`, backupModel);
+        }
+        console.log(`🔄 Planner baton handoff: ${config.openaiBackupPlannerModels.length} backup(s) configured [${config.openaiBackupPlannerModels.join(', ')}]\n`);
+      }
 
       // Load project to get repoPath for executor
       const project = await projectRepo.load(args.projectId);
@@ -325,14 +357,32 @@ async function main(): Promise<void> {
       // Validate OpenAI config
       validateConfig(true);
 
-      // Phase 6: Initialize planner with memory
+      // Phase 6/9: Initialize planner with memory
+      const primaryModel = config.openaiPrimaryPlannerModel;
       const planner = new OpenAIPlanner(
         config.openaiApiKey,
-        config.openaiPlannerModel,
+        primaryModel,
         config.openaiBaseUrl,
         memoryManager
       );
-      const pool = new PlannerModelPool(planner);
+      const pool = new PlannerModelPool(planner, primaryModel);
+
+      // Phase 9: Add backup planners if configured
+      if (config.openaiBackupPlannerModels.length > 0) {
+        for (let i = 0; i < config.openaiBackupPlannerModels.length; i++) {
+          const backupModel = config.openaiBackupPlannerModels[i];
+          const backupPlanner = new OpenAIPlanner(
+            config.openaiApiKey,
+            backupModel,
+            config.openaiBaseUrl,
+            memoryManager
+          );
+          pool.addBackupPlanner(backupPlanner, `backup-${i + 1}`, backupModel);
+        }
+        console.log(`🔄 Planner baton handoff: ${config.openaiBackupPlannerModels.length} backup(s) configured [${config.openaiBackupPlannerModels.join(', ')}]\n`);
+      } else {
+        console.log(`🔄 Planner baton handoff: OFF (no backups configured)\n`);
+      }
 
       // Load project to get repoPath for executor
       const project = await projectRepo.load(args.projectId);
@@ -443,6 +493,23 @@ async function main(): Promise<void> {
       console.log(`Health OK:         ${result.health?.ok ?? true}`);
       console.log(`Done:              ${result.done}`);
       console.log(`Blocked:           ${result.blocked}`);
+
+      // Phase 9: Show active planner info
+      if (result.activePlanner) {
+        console.log('\n--- Active Planner (Phase 9) ---');
+        console.log(`Planner ID:        ${result.activePlanner.plannerId}`);
+        console.log(`Model:             ${result.activePlanner.modelName}`);
+        if (result.activePlanner.lastHealthStatus) {
+          console.log(`Health Status:     ${result.activePlanner.lastHealthStatus}`);
+        }
+        if (result.activePlanner.lastHealthScore !== undefined) {
+          console.log(`Health Score:      ${result.activePlanner.lastHealthScore.toFixed(2)}`);
+        }
+        if (result.activePlanner.lastSwitchReason) {
+          console.log(`Last Switch:       ${result.activePlanner.lastSwitchReason}`);
+        }
+      }
+
       if (result.notes) {
         console.log(`\nNotes: ${result.notes}`);
       }
@@ -666,7 +733,7 @@ async function main(): Promise<void> {
     // Default behavior (Phase 1) - Create manager without planner
     // Use a stub pool to satisfy constructor requirements
     const stubPlanner = new OpenAIPlanner('stub', 'gpt-4');
-    const stubPool = new PlannerModelPool(stubPlanner);
+    const stubPool = new PlannerModelPool(stubPlanner, 'gpt-4');
     const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, stubPool);
 
     console.log('🚀 Starting Appula orchestration...');

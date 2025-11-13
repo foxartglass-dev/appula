@@ -1,67 +1,122 @@
 import { PlannerLLM } from './PlannerLLM';
-import { PlannerHealthSnapshot } from '../orchestrator/types';
+import { PlannerHealthSnapshot, ActivePlannerInfo } from '../orchestrator/types';
+
+/**
+ * Internal planner entry with identity and health tracking
+ */
+interface PlannerEntry {
+  id: string;               // "primary", "backup-1", etc.
+  modelName: string;
+  planner: PlannerLLM;
+  lastHealthSnapshot?: PlannerHealthSnapshot;
+  isHealthy: boolean;
+}
 
 /**
  * Pool of planner instances with backup/failover support
  * Phase 2: Implements constructor with primary planner and getActivePlanner()
  * Phase 6: Added baton handoff hooks for health-based model switching
+ * Phase 9: Real baton handoff with automatic model switching based on health
  */
 export class PlannerModelPool {
-  private primaryPlanner: PlannerLLM;
-  private backupPlanners: PlannerLLM[] = [];
-  private unhealthyReason: string | null = null;
-
-  // Phase 6: Health tracking for baton handoff
-  private lastHealthSnapshot: PlannerHealthSnapshot | null = null;
+  private entries: PlannerEntry[] = [];
+  private activeIndex = 0;
   private lastSwitchReason: string | null = null;
+  private lastHealthSnapshot: PlannerHealthSnapshot | null = null;
 
-  constructor(primary: PlannerLLM) {
-    this.primaryPlanner = primary;
+  constructor(primary: PlannerLLM, primaryModelName: string) {
+    this.entries.push({
+      id: "primary",
+      modelName: primaryModelName,
+      planner: primary,
+      isHealthy: true,
+    });
   }
 
   /**
-   * Get the active planner (primary for now, future: could return backup if primary unhealthy)
+   * Get the active planner (primary or backup based on health)
    */
   getActivePlanner(): PlannerLLM {
-    return this.primaryPlanner;
+    return this.entries[this.activeIndex].planner;
+  }
+
+  /**
+   * Phase 9: Get active planner info for baton handoff tracking
+   */
+  getActivePlannerInfo(): ActivePlannerInfo {
+    const entry = this.entries[this.activeIndex];
+    return {
+      plannerId: entry.id,
+      modelName: entry.modelName,
+      lastHealthStatus: entry.lastHealthSnapshot?.status,
+      lastHealthScore: entry.lastHealthSnapshot?.overallScore,
+      lastSwitchReason: this.lastSwitchReason ?? undefined,
+      lastUpdatedAt: new Date().toISOString(),
+    };
   }
 
   /**
    * Add a backup planner for failover
+   * Phase 9: Now accepts id and modelName for identity tracking
    */
-  addBackupPlanner(planner: PlannerLLM): void {
-    this.backupPlanners.push(planner);
+  addBackupPlanner(planner: PlannerLLM, id?: string, modelName?: string): void {
+    // Backward compatibility: if no id/modelName provided, use defaults
+    const backupId = id ?? `backup-${this.entries.length}`;
+    const backupModelName = modelName ?? 'unknown';
+
+    this.entries.push({
+      id: backupId,
+      modelName: backupModelName,
+      planner,
+      isHealthy: true,
+    });
   }
 
   /**
-   * Mark the primary planner as unhealthy (for future use)
-   * Phase 2: Stub - just stores the reason
+   * Phase 9: Mark planner as unhealthy and switch to next healthy backup
    */
   markPlannerUnhealthy(reason: string): void {
-    this.unhealthyReason = reason;
-    console.warn(`⚠️  Primary planner marked unhealthy: ${reason}`);
-    // TODO Phase 3+: Implement actual failover to backup
+    const current = this.entries[this.activeIndex];
+    current.isHealthy = false;
+    this.lastSwitchReason = reason;
+
+    console.warn(`⚠️  Planner "${current.id}" (${current.modelName}) marked unhealthy: ${reason}`);
+
+    // Try to find next healthy planner
+    for (let i = 0; i < this.entries.length; i++) {
+      if (this.entries[i].isHealthy) {
+        const old = this.entries[this.activeIndex];
+        this.activeIndex = i;
+        const newEntry = this.entries[i];
+
+        console.log(`🔄 Switching planner: ${old.id} (${old.modelName}) → ${newEntry.id} (${newEntry.modelName})`);
+        return;
+      }
+    }
+
+    // No healthy planners left – keep current, but log warning
+    console.warn(`[PlannerModelPool] No healthy planners available. Staying on current: ${current.id} (${current.modelName})`);
   }
 
   /**
-   * Get backup planner by index
+   * Get backup planner by index (for backward compatibility)
    */
   getBackup(index: number = 0): PlannerLLM | null {
-    return this.backupPlanners[index] || null;
+    // index+1 because entries[0] is primary
+    const backupIndex = index + 1;
+    return this.entries[backupIndex]?.planner || null;
   }
 
   /**
-   * Get all planners (primary + backups)
+   * Get all planners (for backward compatibility)
    */
   getAllPlanners(): PlannerLLM[] {
-    const planners: PlannerLLM[] = [this.primaryPlanner];
-    planners.push(...this.backupPlanners);
-    return planners;
+    return this.entries.map(e => e.planner);
   }
 
   /**
    * Execute operation with automatic failover to backup planners
-   * Phase 2: Basic implementation
+   * Phase 2: Basic implementation (kept for backward compatibility)
    */
   async executeWithFailover<T>(
     operation: (planner: PlannerLLM) => Promise<T>
@@ -69,21 +124,21 @@ export class PlannerModelPool {
     const allPlanners = this.getAllPlanners();
     let lastError: Error | null = null;
 
-    // Try primary planner first, then backups
+    // Try planners in order
     for (let i = 0; i < allPlanners.length; i++) {
       const planner = allPlanners[i];
-      const plannerType = i === 0 ? 'primary' : `backup-${i}`;
+      const entry = this.entries[i];
 
       try {
-        console.log(`Attempting operation with ${plannerType} planner...`);
+        console.log(`Attempting operation with ${entry.id} planner (${entry.modelName})...`);
         const result = await operation(planner);
         if (i > 0) {
-          console.log(`✅ Operation succeeded with ${plannerType} planner after primary failed`);
+          console.log(`✅ Operation succeeded with ${entry.id} planner after primary failed`);
         }
         return result;
       } catch (error) {
         lastError = error as Error;
-        console.error(`❌ Operation failed with ${plannerType} planner:`, error);
+        console.error(`❌ Operation failed with ${entry.id} planner:`, error);
 
         // If this wasn't the last planner, try the next one
         if (i < allPlanners.length - 1) {
@@ -99,11 +154,13 @@ export class PlannerModelPool {
   }
 
   /**
-   * Phase 6: Record health snapshot from health monitor
-   * This creates a hook for future model handoff based on health scores
+   * Phase 6/9: Record health snapshot from health monitor
+   * Attaches snapshot to current active entry
    */
   recordHealthSnapshot(snapshot: PlannerHealthSnapshot): void {
-    this.lastHealthSnapshot = snapshot;
+    const entry = this.entries[this.activeIndex];
+    entry.lastHealthSnapshot = snapshot;
+    this.lastHealthSnapshot = snapshot; // Keep for getDiagnostics backward compat
   }
 
   /**
@@ -118,7 +175,7 @@ export class PlannerModelPool {
     return {
       lastHealthSnapshot: this.lastHealthSnapshot,
       lastSwitchReason: this.lastSwitchReason,
-      backupCount: this.backupPlanners.length,
+      backupCount: this.entries.length > 0 ? this.entries.length - 1 : 0,
     };
   }
 }
