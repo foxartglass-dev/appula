@@ -73,6 +73,46 @@ export interface ActivePlannerInfo {
   lastUpdatedAt: string;
 }
 
+/**
+ * Phase 9.5: Coder identification and health
+ */
+export type CoderId = string;
+
+export type CoderHealthStatus = "ok" | "degraded" | "failing";
+
+export interface CoderHealthSnapshot {
+  coderId: CoderId;
+  coderName: string;           // e.g. "Claude Code CLI", "GPT-5.1 CLI"
+  status: CoderHealthStatus;
+  score: number;               // 0–1
+  lastCheckedAt: string;       // ISO timestamp
+  notes?: string;
+}
+
+/**
+ * Phase 9.5: Coder committee proposal from a single coder
+ */
+export interface CoderCommitteeProposal {
+  coderId: CoderId;
+  coderName: string;
+  instructionSummary: string;  // short summary of how this coder plans to execute
+  confidence?: number;         // 0–1 optional
+  estimatedDurationMinutes?: number | null;
+}
+
+/**
+ * Phase 9.5: Coder committee decision for phase execution
+ */
+export interface CoderCommitteeDecision {
+  phaseNumber: number;
+  chosenCoderId: CoderId;
+  chosenCoderName: string;
+  proposals: CoderCommitteeProposal[];
+  tieBroken: boolean;
+  reason: string;
+  decidedAt: string;           // ISO timestamp
+}
+
 export interface ProjectStateObject {
   projectId: string;
   summary: string;
@@ -91,6 +131,13 @@ export interface ProjectStateObject {
   lastCommitteeDecision?: CommitteePhaseDecision | null;
   // Phase 9: Active planner tracking for baton handoff
   activePlanner?: ActivePlannerInfo | null;
+  // Phase 9.5: Active coder tracking for committee & health
+  activeCoder?: {
+    coderId: CoderId;
+    coderName: string;
+  } | null;
+  lastCoderHealth?: CoderHealthSnapshot | null;
+  lastCoderCommitteeDecision?: CoderCommitteeDecision | null;
 }
 
 export interface PlanProjectResult {

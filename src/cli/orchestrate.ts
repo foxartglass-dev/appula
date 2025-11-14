@@ -26,6 +26,8 @@ import { MemoryManager } from '../rag/MemoryManager';
 import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
 import { CommitteeEngine, CommitteeMember } from '../orchestrator/CommitteeEngine';
 import { DecisionAggregator } from '../llm/DecisionAggregator';
+import { CoderCommitteeEngine, CoderCommitteeMember } from '../orchestrator/CoderCommitteeEngine';
+import { CoderHealthTester } from '../orchestrator/CoderHealthTester';
 import { config, validateConfig } from '../config/env';
 
 /**
@@ -399,6 +401,31 @@ async function main(): Promise<void> {
       }
       console.log('');
 
+      // Phase 9.5: Build coder committee if coder configured
+      let coderCommittee: CoderCommitteeEngine | null = null;
+
+      if (coder) {
+        const coderHealthTester = new CoderHealthTester(
+          coder,
+          coder.coderId,
+          coder.coderName,
+        );
+
+        const member: CoderCommitteeMember = {
+          id: coder.coderId,
+          name: coder.coderName,
+          executor: coder,
+          healthTester: coderHealthTester,
+        };
+
+        coderCommittee = new CoderCommitteeEngine([member]);
+        console.log('🧠 Coder committee mode: ON (single-member: Claude Code CLI, ready for GPT-5.1 in Phase 10)');
+        console.log('');
+      } else {
+        console.log('🧠 Coder committee mode: OFF (no coder configured)');
+        console.log('');
+      }
+
       // Create project manager with pool
       const projectManager = new ProjectManager(projectRepo, psoRepo, logRepo, pool);
 
@@ -433,8 +460,8 @@ async function main(): Promise<void> {
         console.log('');
       }
 
-      // Create phase runner with optional coder and committee
-      const phaseRunner = new PhaseRunner(pool, logRepo, coder, committeeEngine);
+      // Create phase runner with optional coder and committees
+      const phaseRunner = new PhaseRunner(pool, logRepo, coder, committeeEngine, coderCommittee);
 
       // Phase 5: Create health monitor based on OpenAI config
       let healthMonitor: OrchestrationHealthMonitor;
@@ -507,6 +534,20 @@ async function main(): Promise<void> {
         }
         if (result.activePlanner.lastSwitchReason) {
           console.log(`Last Switch:       ${result.activePlanner.lastSwitchReason}`);
+        }
+      }
+
+      // Phase 9.5: Show active coder info
+      if (result.activeCoder) {
+        console.log('\n--- Active Coder (Phase 9.5) ---');
+        console.log(`Coder ID:          ${result.activeCoder.coderId}`);
+        console.log(`Coder Name:        ${result.activeCoder.coderName}`);
+        if (result.activeCoder.health) {
+          console.log(`Health Status:     ${result.activeCoder.health.status}`);
+          console.log(`Health Score:      ${result.activeCoder.health.score.toFixed(2)}`);
+          if (result.activeCoder.health.notes) {
+            console.log(`Notes:             ${result.activeCoder.health.notes}`);
+          }
         }
       }
 

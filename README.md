@@ -9,7 +9,7 @@ AI orchestration system combining multiple AI agents for software development au
 - **Gemini File Search (RAG)** - Long-term memory (future)
 - **Skyvern** - UI testing agent (future)
 
-## Current Status: Phase 9
+## Current Status: Phase 9.5
 
 ### Phase 1: Project Skeleton ✅
 - Clean folder structure
@@ -109,6 +109,18 @@ AI orchestration system combining multiple AI agents for software development au
 - Full backward compatibility with existing single-planner setups
 - Graceful degradation when no backups configured
 - Foundation for intelligent multi-model orchestration and quality-based planner selection
+
+### Phase 9.5: Coder Committee & Health Tester ✅
+- Coder health testing via dry-run mode (cheap, safe checks without repo mutation)
+- CoderHealthTester runs lightweight health probes on coder executors
+- CoderCommitteeEngine manages multiple coder candidates and selects best based on health
+- Dry-run support in CoderExecutor interface and ClaudeCodeCliExecutor implementation
+- ActiveCoder tracking in PSO (coder ID, name, health status, score)
+- Coder committee decision audit trail stored in PSO
+- CLI displays active coder info in cycle results
+- Currently single-member (Claude Code CLI), ready for GPT-5.1 executor in Phase 10
+- Full backward compatibility with existing single-coder setups
+- Foundation for multi-coder orchestration and intelligent executor selection
 
 ## Project Structure
 
@@ -697,9 +709,25 @@ npm run build
 - Full backward compatibility: All existing code works without changes
 - Foundation for intelligent multi-model orchestration and quality-based planner selection
 
+### ✅ Phase 9.5: Coder Committee & Health Tester
+- CoderHealthTester for lightweight coder health checks using dry-run mode
+- CoderCommitteeEngine manages multiple coder candidates and selects healthiest
+- Extended CoderExecutor types with coderId, coderName, and dryRun fields
+- ClaudeCodeCliExecutor updated with coderId/coderName properties and dry-run support
+- CoderHealthSnapshot type for tracking coder health status (ok/degraded/failing) and scores
+- CoderCommitteeDecision and CoderCommitteeProposal types for decision audit trails
+- ProjectStateObject extended with activeCoder, lastCoderHealth, lastCoderCommitteeDecision
+- OrchestrationResult extended with activeCoder field (ID, name, health)
+- PhaseRunner enhanced to use CoderCommitteeEngine for coder selection
+- CLI displays active coder info in cycle results (ID, name, health status, score, notes)
+- CLI shows "Coder committee mode: ON (single-member: Claude Code CLI, ready for GPT-5.1 in Phase 10)"
+- Full backward compatibility: Single-coder setups work without changes
+- Dry-run execution returns simulated results without mutating repository
+- Foundation for multi-coder orchestration with GPT-5.1 executor in Phase 10
+
 ### Next Phases
 
-- **Phase 10**: Multi-project orchestration and advanced error recovery
+- **Phase 10**: GPT-5.1 coder executor and multi-coder orchestration
 - **Phase 11**: Real Gemini RAG integration with actual HTTP calls
 - **Phase 12**: Real Skyvern HTTP integration with actual browser automation
 

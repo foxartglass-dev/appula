@@ -3,6 +3,7 @@ import { PlannerModelPool } from '../llm/PlannerModelPool';
 import { LogRepo } from '../storage/LogRepo';
 import { CoderExecutor, PhaseExecutionResult } from '../llm/CoderExecutor';
 import { CommitteeEngine } from './CommitteeEngine';
+import { CoderCommitteeEngine } from './CoderCommitteeEngine';
 
 /**
  * Phase 4: Outcome of running a phase
@@ -18,23 +19,27 @@ export interface PhaseRunOutcome {
  * Runs individual project phases
  * Phase 4: Returns rich PhaseRunOutcome for orchestrator
  * Phase 8: Optionally uses CommitteeEngine for multi-model planning
+ * Phase 9.5: Optionally uses CoderCommitteeEngine for multi-coder selection
  */
 export class PhaseRunner {
   private plannerPool: PlannerModelPool;
   private logRepo: LogRepo;
   private coder: CoderExecutor | null;
   private committeeEngine: CommitteeEngine | null;
+  private coderCommittee: CoderCommitteeEngine | null;
 
   constructor(
     plannerPool: PlannerModelPool,
     logRepo: LogRepo,
     coder: CoderExecutor | null = null,
-    committeeEngine: CommitteeEngine | null = null
+    committeeEngine: CommitteeEngine | null = null,
+    coderCommittee: CoderCommitteeEngine | null = null
   ) {
     this.plannerPool = plannerPool;
     this.logRepo = logRepo;
     this.coder = coder;
     this.committeeEngine = committeeEngine;
+    this.coderCommittee = coderCommittee;
   }
 
   /**
@@ -150,8 +155,61 @@ export class PhaseRunner {
         );
       }
 
+      // Phase 9.5: Choose coder via committee if available
+      let chosenCoder: CoderExecutor | null = this.coder;
+      const committeeAvailable = this.coderCommittee && this.coderCommittee.hasMembers();
+
+      if (committeeAvailable && chosenCoder) {
+        console.log('🧠 Using coder committee mode for execution selection\n');
+
+        const ctx = {
+          projectId: project.id,
+          projectRoot: project.repoPath,
+        };
+
+        const committeeResult = await this.coderCommittee!.chooseCoderForPhase(
+          ctx,
+          nextPhase.number,
+          nextPhase.name,
+          instruction
+        );
+
+        chosenCoder = committeeResult.chosenExecutor;
+
+        // Update PSO with coder committee decision
+        pso.activeCoder = {
+          coderId: committeeResult.decision.chosenCoderId,
+          coderName: committeeResult.decision.chosenCoderName,
+        };
+        pso.lastCoderCommitteeDecision = committeeResult.decision;
+        pso.lastCoderHealth = committeeResult.chosenHealth;
+
+        console.log(`🎯 Chosen coder: ${committeeResult.decision.chosenCoderName} (health score: ${committeeResult.chosenHealth?.score.toFixed(2) ?? 'n/a'})\n`);
+
+        await this.logRepo.append(
+          this.logRepo.createLogEntry(
+            project.id,
+            'info',
+            'Coder selected by committee',
+            {
+              phase: nextPhase.number,
+              chosenCoder: committeeResult.decision.chosenCoderId,
+              chosenCoderName: committeeResult.decision.chosenCoderName,
+              healthScore: committeeResult.chosenHealth?.score ?? null,
+              proposalCount: committeeResult.decision.proposals.length,
+            }
+          )
+        );
+      } else if (chosenCoder) {
+        // Single coder mode - set default activeCoder
+        pso.activeCoder = {
+          coderId: (chosenCoder as any).coderId ?? 'default-coder',
+          coderName: (chosenCoder as any).coderName ?? 'Default Coder',
+        };
+      }
+
       // Phase 3: Conditionally execute with coder if provided
-      if (this.coder) {
+      if (chosenCoder) {
         console.log('💡 Executing phase with CoderExecutor...\n');
 
         await this.logRepo.append(
@@ -163,13 +221,19 @@ export class PhaseRunner {
           )
         );
 
-        // Execute with coder
-        const executionResult = await this.coder.runPhase({
+        // Build plan file path
+        const planFilePath = `state/phase-instructions/${project.id}_phase${nextPhase.number}.md`;
+
+        // Execute with chosen coder
+        const executionResult = await chosenCoder.runPhase({
           projectId: project.id,
           projectRoot: project.repoPath,
           phaseNumber: nextPhase.number,
           phaseName: nextPhase.name,
           instruction,
+          planFilePath,
+          coderId: pso.activeCoder?.coderId,
+          dryRun: false,
         });
 
         console.log(`\n📊 Execution Result: ${executionResult.status}`);

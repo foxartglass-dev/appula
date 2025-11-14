@@ -1,4 +1,4 @@
-import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary, UiTestStatus, UiTestRunSummary, ActivePlannerInfo } from './types';
+import { ProjectConfig, ProjectStateObject, HealthCheckResult, PhaseAssessmentSummary, UiTestStatus, UiTestRunSummary, ActivePlannerInfo, CoderHealthSnapshot } from './types';
 import { ProjectManager } from './ProjectManager';
 import { PhaseRunner, PhaseRunOutcome } from './PhaseRunner';
 import { PlannerModelPool } from '../llm/PlannerModelPool';
@@ -11,6 +11,7 @@ import { UITestOrchestrator } from '../e2e/UITestOrchestrator';
  * Phase 4: Result of an orchestration cycle
  * Phase 7: Added UI test info
  * Phase 9: Added active planner info for baton handoff
+ * Phase 9.5: Added active coder info for committee & health
  */
 export interface OrchestrationResult {
   projectId: string;
@@ -26,6 +27,12 @@ export interface OrchestrationResult {
   uiTestSummary?: UiTestRunSummary | null;
   // Phase 9: Active planner info
   activePlanner?: ActivePlannerInfo;
+  // Phase 9.5: Active coder info
+  activeCoder?: {
+    coderId: string;
+    coderName: string;
+    health?: CoderHealthSnapshot | null;
+  };
 }
 
 /**
@@ -269,6 +276,14 @@ export class Orchestrator {
       uiTestSummary: uiTestSummary ?? null,
       // Phase 9: Include active planner info
       activePlanner: activePlannerInfo,
+      // Phase 9.5: Include active coder info
+      activeCoder: pso.activeCoder
+        ? {
+            coderId: pso.activeCoder.coderId,
+            coderName: pso.activeCoder.coderName,
+            health: pso.lastCoderHealth ?? null,
+          }
+        : undefined,
     };
 
     // Phase 4.5: Send notification when blocked

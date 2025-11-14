@@ -14,18 +14,43 @@ const execAsync = promisify(exec);
 
 /**
  * Phase 3: Claude Code CLI executor implementation
+ * Phase 9.5: Added coderId/coderName for identity tracking and dryRun support
  *
  * Executes phases using the Claude Code CLI with configurable command templates.
  * Supports plan-only mode when CLI is not configured.
+ * Supports dry-run mode for health testing without mutating the repository.
  */
 export class ClaudeCodeCliExecutor implements CoderExecutor {
+  public readonly coderId: string = "claude-cli";
+  public readonly coderName = "Claude Code CLI";
+
   constructor(private readonly defaultProjectRoot: string) {}
 
   /**
    * Execute a phase using Claude Code CLI
+   * Phase 9.5: Supports dry-run mode for health checks
    */
   async runPhase(req: PhaseExecutionRequest): Promise<PhaseExecutionResult> {
     const startedAt = new Date().toISOString();
+
+    // Phase 9.5: Handle dry-run mode
+    if (req.dryRun) {
+      const planPath = req.planFilePath || `state/phase-instructions/${req.projectId}_phase${req.phaseNumber}.md`;
+      const command = config.claudeCodeCommandTemplate
+        ? this.buildCommandForDryRun(req, planPath)
+        : 'N/A (no template configured)';
+
+      const now = new Date().toISOString();
+      return {
+        status: 'success',
+        startedAt: now,
+        finishedAt: now,
+        logs: `Phase 9.5 dry-run for ${this.coderName}.\nWould run:\n${command}\n\nNo actual execution performed (dry-run mode).`,
+        coderId: this.coderId,
+        coderName: this.coderName,
+        dryRun: true,
+      };
+    }
 
     // Check if command template is configured
     if (!config.claudeCodeCommandTemplate || config.claudeCodeCommandTemplate.trim() === '') {
@@ -36,6 +61,9 @@ export class ClaudeCodeCliExecutor implements CoderExecutor {
         exitCode: null,
         logs: '[Plan-only mode] Claude Code CLI command template not configured',
         errorMessage: 'CLAUDE_CODE_COMMAND_TEMPLATE environment variable is not set. Running in plan-only mode.',
+        coderId: this.coderId,
+        coderName: this.coderName,
+        dryRun: false,
       };
     }
 
@@ -69,6 +97,9 @@ export class ClaudeCodeCliExecutor implements CoderExecutor {
         finishedAt,
         exitCode: 0,
         logs,
+        coderId: this.coderId,
+        coderName: this.coderName,
+        dryRun: false,
       };
     } catch (error: any) {
       const finishedAt = new Date().toISOString();
@@ -82,6 +113,9 @@ export class ClaudeCodeCliExecutor implements CoderExecutor {
           exitCode: null,
           logs: this.combineLogs(error.stdout || '', error.stderr || ''),
           errorMessage: `Execution timed out after ${config.claudeCodeTimeoutMs}ms`,
+          coderId: this.coderId,
+          coderName: this.coderName,
+          dryRun: false,
         };
       }
 
@@ -94,6 +128,9 @@ export class ClaudeCodeCliExecutor implements CoderExecutor {
           exitCode: error.code,
           logs: this.combineLogs(error.stdout || '', error.stderr || ''),
           errorMessage: `CLI exited with code ${error.code}`,
+          coderId: this.coderId,
+          coderName: this.coderName,
+          dryRun: false,
         };
       }
 
@@ -105,6 +142,9 @@ export class ClaudeCodeCliExecutor implements CoderExecutor {
         exitCode: null,
         logs: error.stdout ? this.combineLogs(error.stdout, error.stderr || '') : '',
         errorMessage: error.message || 'Unknown CLI error',
+        coderId: this.coderId,
+        coderName: this.coderName,
+        dryRun: false,
       };
     }
   }
@@ -151,6 +191,22 @@ ${req.instruction}
     const instructionSummary = req.instruction.split('\n')[0].substring(0, 100);
 
     // Replace placeholders
+    return template
+      .replace(/\{projectRoot\}/g, req.projectRoot)
+      .replace(/\{phaseNumber\}/g, String(req.phaseNumber))
+      .replace(/\{planPath\}/g, planPath)
+      .replace(/\{instructionSummary\}/g, instructionSummary)
+      .replace(/\{phaseName\}/g, req.phaseName)
+      .replace(/\{projectId\}/g, req.projectId);
+  }
+
+  /**
+   * Phase 9.5: Build command string for dry-run display (doesn't execute)
+   */
+  private buildCommandForDryRun(req: PhaseExecutionRequest, planPath: string): string {
+    const template = config.claudeCodeCommandTemplate!;
+    const instructionSummary = req.instruction.split('\n')[0].substring(0, 100);
+
     return template
       .replace(/\{projectRoot\}/g, req.projectRoot)
       .replace(/\{phaseNumber\}/g, String(req.phaseNumber))
